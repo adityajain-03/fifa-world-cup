@@ -1,0 +1,20 @@
+# Render blueprint — one Docker web service that serves the API + dashboard.
+# Deploy: push to GitHub, then Render → New → Blueprint, pick this repo.
+services:
+  - type: web
+    name: fifa-wc-2026
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter            # 'free' works too (sleeps when idle); 'starter' for the persistent disk
+    healthCheckPath: /api/status
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false          # set in the Render dashboard (secret)
+      - key: ADMIN_TOKEN
+        sync: false          # your private refresh token (secret)
+      - key: REFRESH_ON_STARTUP
+        value: "true"
+    disk:                    # persist the SQLite DB + HTML cache across restarts
+      name: data
+      mountPath: /app/backend/data
+      sizeGB: 1
