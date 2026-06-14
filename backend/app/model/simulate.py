@@ -253,7 +253,12 @@ class Simulator:
 
         r32_ties, r32_w = [], {}
         for i, (a, b) in enumerate(r32_pairs, 1):
-            tie, w = self._tie(a, b); r32_ties.append(tie); r32_w[i] = w
+            tie, w = self._tie(a, b)
+            home_slot, away_slot = bm.R32_SLOTS[i - 1]
+            tie["home_slot"] = bm.slot_label(home_slot)
+            tie["away_slot"] = bm.slot_label(away_slot)
+            tie["match_no"] = i
+            r32_ties.append(tie); r32_w[i] = w
         r16_ties, r16_w = [], {}
         for j, (x, y) in enumerate(bm.R16_PAIRS, 1):
             tie, w = self._tie(r32_w[x], r32_w[y]); r16_ties.append(tie); r16_w[j] = w

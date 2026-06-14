@@ -61,6 +61,16 @@ FINAL_PAIR = (1, 2)                            # indices into SF winners
 THIRD_SLOT_INDICES = [i for i, (_, away) in enumerate(R32_SLOTS, start=1) if away[0] == "T"]
 
 
+def slot_label(slot: tuple) -> str:
+    """Human-readable slot code: 'A1' (group winner), 'A2' (runner-up), '3rd'."""
+    kind = slot[0]
+    if kind == "W":
+        return f"{slot[1]}1"
+    if kind == "R":
+        return f"{slot[1]}2"
+    return "3rd"
+
+
 def assign_thirds(qualified_thirds: dict[str, str]) -> dict[int, str]:
     """Assign the (up to 8) qualifying third-placed teams to the 8 third slots,
     respecting each slot's eligible-group list. `qualified_thirds` maps

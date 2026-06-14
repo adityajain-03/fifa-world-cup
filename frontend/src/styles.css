@@ -141,6 +141,14 @@ code { background: #0008; padding: 1px 5px; border-radius: 4px; }
   background: var(--muted); border-radius: 3px; padding: 0 3px; margin-right: 4px;
   vertical-align: middle; }
 .bt-side.win .bt-grp { background: var(--accent); }
+.bt-slot { display: inline-block; min-width: 20px; text-align: center; font-size: 8px;
+  font-weight: 800; color: var(--accent); background: #0d1f16; border: 1px solid #1f3a2a;
+  border-radius: 3px; padding: 0 3px; margin-right: 4px; vertical-align: middle; }
+.bt-side.win .bt-slot { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.bt-mno { font-size: 8px; color: var(--muted); text-align: center; padding: 2px 0 1px;
+  border-bottom: 1px solid #0d1620; letter-spacing: 0.3px; }
+.bracket-legend { font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.8; }
+.bracket-legend .bt-slot { margin: 0 2px 0 6px; }
 .bt-prob { font-size: 9px; color: var(--muted); margin-left: 4px; flex: none; }
 
 .bf-champ-col .bf-body { justify-content: center; }

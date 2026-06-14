@@ -11,11 +11,14 @@ const ROUNDS = [
   ["final", "Final"],
 ];
 
-function Side({ name, group, win, prob }) {
+function Side({ name, group, slot, win, prob }) {
+  // For R32, show the slot code (A1/A2/3rd) which is more informative than the
+  // bare group letter; elsewhere show the group letter.
+  const tag = slot || group;
   return (
     <div className={win ? "bt-side win" : "bt-side"}>
       <span className="bt-name">
-        {group && <span className="bt-grp">{group}</span>}
+        {tag && <span className={slot ? "bt-slot" : "bt-grp"}>{tag}</span>}
         {name}
       </span>
       <span className="bt-prob">{prob}%</span>
@@ -29,8 +32,9 @@ function TieBox({ tie }) {
   const ph = Math.round(tie.p_home_advance * 100);
   return (
     <div className="bt-tie">
-      <Side name={tie.home} group={tie.home_group} win={homeWin} prob={ph} />
-      <Side name={tie.away} group={tie.away_group} win={!homeWin} prob={100 - ph} />
+      {tie.match_no && <div className="bt-mno">R32 · Match {tie.match_no}</div>}
+      <Side name={tie.home} group={tie.home_group} slot={tie.home_slot} win={homeWin} prob={ph} />
+      <Side name={tie.away} group={tie.away_group} slot={tie.away_slot} win={!homeWin} prob={100 - ph} />
     </div>
   );
 }
@@ -38,7 +42,15 @@ function TieBox({ tie }) {
 export default function BracketView({ bracket }) {
   if (!bracket || !bracket.round_of_32) return <p className="muted">No bracket yet.</p>;
   return (
-    <div className="bracket-flat">
+    <>
+      <div className="bracket-legend">
+        Official FIFA slot map (predicted teams). Slot codes:
+        <span className="bt-slot">A1</span> group winner ·
+        <span className="bt-slot">A2</span> runner-up ·
+        <span className="bt-slot">3rd</span> best third-placed.
+        % = chance that side advances.
+      </div>
+      <div className="bracket-flat">
       {ROUNDS.map(([key, label]) => (
         <div className="bf-col" key={key}>
           <div className="bf-label">{label}</div>
@@ -61,6 +73,7 @@ export default function BracketView({ bracket }) {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
