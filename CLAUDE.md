@@ -50,12 +50,14 @@ analysis.
 ## Update model (two paths)
 
 - **Live results poll (automatic, cheap, LLM-free)** — `services/refresh.poll_results()`
-  runs every `RESULTS_POLL_MINUTES` (default 5) via APScheduler. It fetches only
-  recent ESPN dates (short cache), and if a result changed, re-runs the
-  deterministic match-prob model + 10k sim from the **cached ratings**
-  (`orchestrator.run_simulation_only()`) → updated bracket/odds. No crawl of
-  Wikipedia/news, no Claude calls. This is what keeps the bracket live as matches
-  finish. Frontend auto-reloads when `last_prediction_at` changes.
+  runs every `RESULTS_POLL_MINUTES` (default 5) via APScheduler (and once at
+  startup). It fetches recent ESPN dates (short cache), and if a result changed,
+  applies a **deterministic goal-difference-weighted Elo update** to the teams
+  that played (`model/ratings.apply_match_elo`, layered on the news-anchored
+  rating), then re-runs the match-prob model + 10k sim
+  (`orchestrator.run_simulation_only()`) → updated **ratings, odds, and bracket**.
+  No Wikipedia/news crawl, no Claude calls. Frontend auto-reloads when
+  `last_prediction_at` changes.
 - **Full refresh (manual, expensive)** — `POST /api/refresh` (owner-only, gated by
   `ADMIN_TOKEN`) runs `run_refresh()`: crawl ESPN+Wikipedia+news, re-scout teams
   (Claude news web search → ratings), simulate. This is the only path that spends

@@ -98,6 +98,42 @@ def match_probabilities(
     return mp
 
 
+ELO_K = 24.0  # update step; goal-difference weighted below
+
+
+def apply_match_elo(base: dict[str, float], matches) -> dict[str, float]:
+    """Adjust ratings for played results via standard goal-difference-weighted Elo.
+
+    `base` is the anchor rating per team (news-grounded from the Scout, or prior).
+    Each finished match nudges both teams toward/away from expectation. Deterministic
+    and LLM-free, so the live poll can move ratings as matches finish; a manual
+    refresh re-anchors `base` from news, then this runs again on top.
+    """
+    r = dict(base)
+    played = [
+        m for m in matches
+        if m.status == "finished"
+        and m.home_id in r and m.away_id in r
+        and m.home_score is not None and m.away_score is not None
+    ]
+    played.sort(key=lambda m: (m.date or "", m.id))
+    for m in played:
+        ra, rb = r[m.home_id], r[m.away_id]
+        exp_a = 1.0 / (1.0 + 10 ** (-(ra - rb) / 400.0))
+        if m.home_score > m.away_score:
+            actual_a = 1.0
+        elif m.home_score < m.away_score:
+            actual_a = 0.0
+        else:
+            actual_a = 0.5
+        gd = abs(m.home_score - m.away_score)
+        mult = 1.0 if gd <= 1 else (1.5 if gd == 2 else (11 + gd) / 8.0)
+        delta = ELO_K * mult * (actual_a - exp_a)
+        r[m.home_id] = ra + delta
+        r[m.away_id] = rb - delta
+    return r
+
+
 def fifa_rank_to_rating(rank: int | None) -> float:
     """Prior rating from a FIFA ranking position (used when ungrounded)."""
     if not rank:

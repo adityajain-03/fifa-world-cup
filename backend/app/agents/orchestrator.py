@@ -13,7 +13,9 @@ from concurrent.futures import ThreadPoolExecutor
 from .. import db
 from ..config import settings
 from ..models import BracketSnapshot, Match, MatchPrediction, ScoutDossier, Team
-from ..model.ratings import TeamStrength, fifa_rank_to_rating, match_probabilities
+from ..model.ratings import (
+    TeamStrength, apply_match_elo, fifa_rank_to_rating, match_probabilities,
+)
 from ..model.simulate import KO_ROUNDS, simulate
 from .analyst import write_narrative
 from .client import ClaudeClient
@@ -132,17 +134,27 @@ def _clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
 
 
-def to_strengths(teams: list[Team], dossiers: dict[str, ScoutDossier]) -> list[TeamStrength]:
-    out = []
+def to_strengths(
+    teams: list[Team], dossiers: dict[str, ScoutDossier], matches: list[Match] | None = None
+) -> list[TeamStrength]:
+    # Anchor rating per team: the news-grounded Scout rating, clamped and blended
+    # lightly toward the FIFA-rank prior so a stray LLM outlier can't dominate.
+    base: dict[str, float] = {}
+    meta: dict[str, ScoutDossier] = {}
     for t in teams:
         d = dossiers.get(t.id) or _prior_dossier(t)
-        # Keep every team on the same sane Elo scale so a stray LLM outlier can't
-        # dominate the simulation; blend lightly toward the FIFA-rank prior.
+        meta[t.id] = d
         prior = fifa_rank_to_rating(t.fifa_rank)
-        rating = _clamp(d.rating, 1150.0, 2150.0)
-        rating = 0.85 * rating + 0.15 * prior
+        base[t.id] = 0.85 * _clamp(d.rating, 1150.0, 2150.0) + 0.15 * prior
+
+    # Apply deterministic Elo on played results (free; runs in the poll too).
+    adjusted = apply_match_elo(base, matches or []) if matches else base
+
+    out = []
+    for t in teams:
+        d = meta[t.id]
         out.append(TeamStrength(
-            id=t.id, name=t.name, rating=rating,
+            id=t.id, name=t.name, rating=_clamp(adjusted[t.id], 1100.0, 2200.0),
             attack_tilt=_clamp(d.attack_tilt, -1, 1), defense_tilt=_clamp(d.defense_tilt, -1, 1),
             group=t.group,
         ))
@@ -181,7 +193,7 @@ def run_predictions(*, force: bool = False) -> BracketSnapshot:
     client = ClaudeClient()
 
     dossiers, n_scouted = build_dossiers(client, teams, matches, data_version, force=force)
-    strengths = to_strengths(teams, dossiers)
+    strengths = to_strengths(teams, dossiers, matches)
 
     preds = compute_match_predictions(strengths, matches)
     db.store_match_predictions(preds, data_version)
@@ -237,7 +249,7 @@ def run_simulation_only() -> BracketSnapshot:
 
     data_version = compute_data_version(teams, matches)
     dossiers = _cached_dossiers(teams)
-    strengths = to_strengths(teams, dossiers)
+    strengths = to_strengths(teams, dossiers, matches)
 
     preds = compute_match_predictions(strengths, matches)
     db.store_match_predictions(preds, data_version)
