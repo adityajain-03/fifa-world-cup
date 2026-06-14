@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     # The model used by every agent. See the claude-api skill: opus-4-8 is current.
     claude_model: str = "claude-opus-4-8"
+    # Cheaper model for summarising crawled news headlines into the briefing.
+    news_model: str = "claude-sonnet-4-6"
 
     # --- Storage / caching ---
     db_path: Path = BASE_DIR / "data" / "fifa.db"

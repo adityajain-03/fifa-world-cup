@@ -23,20 +23,21 @@ is provided — reflect any injuries/absences and roster changes it mentions.
 
 NEWS_SYSTEM = """\
 You are a football researcher building a scouting brief on a national team for the \
-2026 FIFA World Cup. Use the web_search tool (2-5 searches) to gather CURRENT, sourced \
-facts across these four areas and organise your answer under these exact headings:
+2026 FIFA World Cup. You are given recent news HEADLINES about the team, crawled from \
+ESPN, BBC, and FIFA. Treat those headlines as your source of CURRENT facts (this \
+tournament's form/results, injuries, suspensions, lineup/selection news). You may use \
+your own background knowledge for the team's longer 4-year trajectory, but do NOT \
+invent current injuries or results that the headlines don't support.
 
-FORM & 2026 RESULTS: how they've played at this World Cup so far and in recent warm-ups.
-4-YEAR TRAJECTORY: their record and trajectory over roughly the last 4 years — 2022 \
-World Cup result, qualifying campaign, Nations League / continental tournaments, and \
-whether the programme is rising or declining. Note key players' recent club form.
-PROJECTED XI: the likely starting eleven for their next match (named players, with \
-formation if known).
-INJURIES & ABSENCES: injured, suspended, or unavailable players, and notable selection \
-calls.
+Organise the brief under these exact headings:
 
-Be concise and factual — bullet points under each heading, most important first, no \
-speculation. If a section has nothing notable, say so briefly.
+FORM & 2026 RESULTS: how they've played at this World Cup so far / recent warm-ups (from the headlines).
+4-YEAR TRAJECTORY: 2022 World Cup result, qualifying, and whether the programme is rising or declining (background knowledge ok).
+PROJECTED XI: likely starting eleven / key names for the next match (from headlines where available).
+INJURIES & ABSENCES: injured/suspended/unavailable players and notable selection calls (from the headlines).
+
+Be concise and factual — bullet points under each heading, most important first. If the \
+headlines don't cover a section, say so briefly rather than speculating.
 """
 
 ANALYST_SYSTEM = """\
@@ -48,12 +49,15 @@ readable; do not invent results that have not happened.
 """
 
 
-def news_user_prompt(team_name: str, today: str = "") -> str:
+def news_user_prompt(team_name: str, headlines: str, today: str = "") -> str:
     return f"""\
-{f"Today is {today}. " if today else ""}Research {team_name} for the 2026 FIFA World \
-Cup. Cover all four areas: current form & 2026 results, their 4-year trajectory \
-(incl. the 2022 World Cup and qualifying), the projected starting XI for their next \
-match, and current injuries/absences.
+{f"Today is {today}. " if today else ""}Recent news headlines about {team_name} \
+(2026 FIFA World Cup), crawled from ESPN, BBC, and FIFA:
+
+{headlines}
+
+Write the scouting brief for {team_name} under the four headings, grounding current \
+facts in these headlines.
 """
 
 

@@ -1,24 +1,22 @@
 """Scout agent: gather live news for a team, then turn it into a structured rating.
 
 Two steps on purpose:
-  1. a web_search call that returns a plain-text news briefing, and
-  2. a structured (no-tools) call that returns a ScoutDossier.
+  1. crawl ESPN/BBC/FIFA headlines ourselves (news_sources) and have a cheap
+     model (Sonnet) summarise them into a plain-text briefing, and
+  2. a structured (no-tools) Opus call that returns a ScoutDossier (the rating).
 Keeping tools out of the structured call guarantees valid JSON and a consistent
-rating scale across all teams.
+rating scale; crawling ourselves avoids the paid web_search tool.
 """
 from __future__ import annotations
 
 from ..config import settings
+from ..crawlers.news_sources import team_news_blob
 from ..models import Match, ScoutDossier, Team
 from ..model.ratings import fifa_rank_to_rating
 from .client import ClaudeClient
 from .prompts import (
     NEWS_SYSTEM, SCOUT_SYSTEM, news_user_prompt, scout_user_prompt,
 )
-
-# Use the simpler search tool (no code-execution dynamic filtering) — more
-# predictable and avoids the model mis-driving the code-exec path.
-WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 4}
 
 
 def _results_summary(team: Team, matches: list[Match]) -> str:
@@ -52,13 +50,16 @@ def _squad_summary(team: Team, limit: int = 12) -> str:
 
 
 def gather_news(client: ClaudeClient, team: Team) -> str:
-    """Step 1: live news briefing via web_search (plain text)."""
+    """Step 1: crawl ESPN/BBC/FIFA headlines, summarise into a briefing (Sonnet)."""
     if not settings.scout_web_search:
         return ""
-    # Adaptive thinking is required to drive the web_search tool correctly.
+    headlines = team_news_blob(team.name)
+    if not headlines:
+        return ""
+    # Pure summarisation of provided text — cheap model, no thinking, no tools.
     return client.complete(
-        NEWS_SYSTEM, news_user_prompt(team.name, settings.today),
-        max_tokens=2000, tools=[WEB_SEARCH_TOOL],
+        NEWS_SYSTEM, news_user_prompt(team.name, headlines, settings.today),
+        max_tokens=1500, model=settings.news_model, thinking={"type": "disabled"},
     )
 
 

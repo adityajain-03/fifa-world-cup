@@ -18,11 +18,13 @@ LLM agents set the *ratings*; deterministic math + simulation produce the
 *probabilities*. Orchestrated in `backend/app/agents/orchestrator.py`.
 
 1. **Scout agents** (`agents/scout.py`) — one per team, run concurrently (the
-   multi-agent fan-out). Each takes the team's FIFA-rank prior + crawled
-   results/roster and returns a structured `ScoutDossier` (strength `rating` on
-   an Elo scale, `attack_tilt`, `defense_tilt`, form, key players, injuries,
-   roster changes). Model `claude-opus-4-8`, adaptive thinking, structured
-   outputs via `client.messages.parse(output_format=ScoutDossier)`.
+   multi-agent fan-out). Two steps: (a) crawl ESPN/BBC/FIFA headlines and
+   summarise them into a news briefing with `claude-sonnet-4-6`; (b) an
+   `claude-opus-4-8` structured-output call that turns the briefing + FIFA-rank
+   prior + crawled results into a `ScoutDossier` (strength `rating` on an Elo
+   scale, `attack_tilt`, `defense_tilt`, `form_rating`, `one_line_outlook`, plus
+   the `briefing` text). Structured outputs via
+   `client.messages.parse(output_format=ScoutDossier)`.
 2. **Elo + Poisson** (`model/ratings.py`, deterministic) — converts a rating
    gap into per-match `P(home/draw/away)` + most-likely scoreline. Elo logistic
    for win expectancy → goal supremacy around a ~2.6-goal baseline → Poisson
@@ -75,8 +77,13 @@ analysis.
    sources are unreachable.
 5. Predictions run (`agents/orchestrator.py`) → results stored → bracket snapshot.
 
-Scout agents also use Claude's **`web_search`** tool (config `SCOUT_WEB_SEARCH`,
-default on) to ground ratings on live injuries/news.
+**News grounding (no paid web_search):** `crawlers/news_sources.py` pulls recent
+per-team headlines from **ESPN, BBC, and FIFA** via site-restricted Google News
+RSS (clean XML — avoids fifa.com/ESPN's JS-rendered pages and needs no headless
+browser). The Scout summarises those headlines into a briefing with a cheaper
+model (`NEWS_MODEL`, default `claude-sonnet-4-6`), then Opus turns the briefing
++ FIFA-rank prior + results into the structured `rating`. Toggle with
+`SCOUT_WEB_SEARCH` (name retained as the news on/off flag).
 
 `data_version` = hash of finished results + rosters. Scout dossiers are cached
 per team by `data_version`, so a daily refresh only re-scouts teams whose inputs

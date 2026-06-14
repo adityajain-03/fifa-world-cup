@@ -80,7 +80,7 @@ class ClaudeClient:
 
     def complete(
         self, system: str, user: str, max_tokens: int = 1500, *,
-        tools: list | None = None, thinking: dict | None = None,
+        tools: list | None = None, thinking: dict | None = None, model: str | None = None,
     ) -> str:
         """Plain-text completion. Optional server-side `tools` (e.g. web_search) run
         within the call; we resume across `pause_turn` until a final answer.
@@ -92,7 +92,7 @@ class ClaudeClient:
             return ""
         messages = [{"role": "user", "content": user}]
         kwargs = dict(
-            model=settings.claude_model,
+            model=model or settings.claude_model,
             max_tokens=max_tokens,
             thinking=thinking or {"type": "adaptive"},
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
