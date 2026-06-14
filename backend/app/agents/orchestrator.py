@@ -40,6 +40,33 @@ def _prior_dossier(team: Team) -> ScoutDossier:
     )
 
 
+KO_STAGES = {"round_of_32", "round_of_16", "quarter_final", "semi_final", "third_place", "final"}
+
+
+def alive_team_ids(teams: list[Team], matches: list[Match]) -> set[str]:
+    """Teams still in contention. During the group stage that's everyone; once the
+    knockouts have real teams drawn, it's the knockout participants minus any that
+    lost a finished knockout match. Penalty draws (level score) keep both teams
+    (we can't tell the loser from the score) — a safe over-inclusion."""
+    ids = {t.id for t in teams}
+    ko = [
+        m for m in matches
+        if m.stage in KO_STAGES and m.home_id in ids and m.away_id in ids
+    ]
+    if not ko:
+        return set(ids)  # group stage in progress → everyone alive
+    participants, losers = set(), set()
+    for m in ko:
+        participants.add(m.home_id)
+        participants.add(m.away_id)
+        if m.status == "finished" and m.home_score is not None and m.away_score is not None:
+            if m.home_score > m.away_score:
+                losers.add(m.away_id)
+            elif m.away_score > m.home_score:
+                losers.add(m.home_id)
+    return participants - losers
+
+
 def build_dossiers(
     client: ClaudeClient, teams: list[Team], matches: list[Match], data_version: str,
     *, force: bool = False,
@@ -47,6 +74,9 @@ def build_dossiers(
     cached = db.get_dossiers()
     dossiers: dict[str, ScoutDossier] = {}
     to_scout: list[Team] = []
+    alive = alive_team_ids(teams, matches)
+    if len(alive) < len(teams):
+        log.info("Knockout stage: scouting only %d non-eliminated teams", len(alive))
 
     for t in teams:
         row = cached.get(t.id)
@@ -61,9 +91,11 @@ def build_dossiers(
         grounded_cache = cached_dossier is not None and bool(cached_dossier.briefing)
         if not force and grounded_cache and client.available:
             dossiers[t.id] = cached_dossier
-        elif client.available:
+        elif client.available and t.id in alive:
             to_scout.append(t)
         else:
+            # Eliminated teams (and the ungrounded path) keep their last dossier
+            # rather than burning scout budget on a team that's out.
             dossiers[t.id] = cached_dossier or _prior_dossier(t)
 
     if to_scout:
