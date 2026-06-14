@@ -22,6 +22,23 @@ from .scout import scout_team
 log = logging.getLogger("fifa.orchestrator")
 
 
+def team_data_version(team: Team, matches: list[Match]) -> str:
+    """Per-team signature: changes only when THIS team plays a new finished match
+    or its roster changes. Used to decide whether a team needs re-scouting, so a
+    refresh adds onto the existing dossiers instead of re-scouting all 48."""
+    h = hashlib.sha256()
+    for m in sorted(matches, key=lambda x: x.id):
+        if (
+            m.status == "finished"
+            and team.id in (m.home_id, m.away_id)
+            and m.home_score is not None
+            and m.away_score is not None
+        ):
+            h.update(f"{m.id}:{m.home_score}:{m.away_score}".encode())
+    h.update(("|".join(sorted(p.name for p in team.players))).encode())
+    return h.hexdigest()[:16]
+
+
 def compute_data_version(teams: list[Team], matches: list[Match]) -> str:
     h = hashlib.sha256()
     for m in sorted(matches, key=lambda x: x.id):
@@ -71,43 +88,44 @@ def build_dossiers(
     client: ClaudeClient, teams: list[Team], matches: list[Match], data_version: str,
     *, force: bool = False,
 ) -> dict[str, ScoutDossier]:
+    """Incremental: reuse each team's existing grounded dossier unless THAT team
+    changed (per-team version). Only changed (and still-alive) teams are re-scouted,
+    so a refresh adds onto the seed rather than re-scouting all 48."""
+    import json
+
     cached = db.get_dossiers()
     dossiers: dict[str, ScoutDossier] = {}
+    versions = {t.id: team_data_version(t, matches) for t in teams}
     to_scout: list[Team] = []
     alive = alive_team_ids(teams, matches)
     if len(alive) < len(teams):
-        log.info("Knockout stage: scouting only %d non-eliminated teams", len(alive))
+        log.info("Knockout stage: only %d non-eliminated teams", len(alive))
 
     for t in teams:
         row = cached.get(t.id)
-        cached_dossier = None
-        if row and row.get("data_version") == data_version:
-            import json
-
-            cached_dossier = ScoutDossier(**json.loads(row["payload_json"]))
-        # Reuse a cached dossier only if it was genuinely news-grounded (has a
-        # briefing). A prior-fallback (empty briefing) is re-scouted so a previous
-        # timeout self-heals on the next refresh.
-        grounded_cache = cached_dossier is not None and bool(cached_dossier.briefing)
-        if not force and grounded_cache and client.available:
-            dossiers[t.id] = cached_dossier
+        cached_dossier = ScoutDossier(**json.loads(row["payload_json"])) if row else None
+        grounded = cached_dossier is not None and bool(cached_dossier.briefing)
+        unchanged = row is not None and row.get("data_version") == versions[t.id]
+        if not force and grounded and unchanged and client.available:
+            dossiers[t.id] = cached_dossier  # add-on: keep, this team didn't change
         elif client.available and t.id in alive:
-            to_scout.append(t)
+            to_scout.append(t)  # new team, changed team, or healing a prior-fallback
         else:
-            # Eliminated teams (and the ungrounded path) keep their last dossier
-            # rather than burning scout budget on a team that's out.
+            # Eliminated teams (and the ungrounded path) keep their last dossier.
             dossiers[t.id] = cached_dossier or _prior_dossier(t)
 
     if to_scout:
-        log.info("Scouting %d teams (concurrency=%d)", len(to_scout), settings.scout_concurrency)
+        log.info("Scouting %d changed/new teams (concurrency=%d)",
+                 len(to_scout), settings.scout_concurrency)
         with ThreadPoolExecutor(max_workers=settings.scout_concurrency) as pool:
             results = list(pool.map(lambda t: (t, scout_team(client, t, matches)), to_scout))
         for t, dossier in results:
             dossiers[t.id] = dossier or _prior_dossier(t)
 
-    for tid, d in dossiers.items():
-        db.store_dossier(tid, d, data_version)
-    return dossiers
+    # Store each dossier stamped with its own per-team version.
+    for t in teams:
+        db.store_dossier(t.id, dossiers[t.id], versions[t.id])
+    return dossiers, len(to_scout)
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
@@ -162,7 +180,7 @@ def run_predictions(*, force: bool = False) -> BracketSnapshot:
     data_version = compute_data_version(teams, matches)
     client = ClaudeClient()
 
-    dossiers = build_dossiers(client, teams, matches, data_version, force=force)
+    dossiers, n_scouted = build_dossiers(client, teams, matches, data_version, force=force)
     strengths = to_strengths(teams, dossiers)
 
     preds = compute_match_predictions(strengths, matches)
@@ -171,7 +189,12 @@ def run_predictions(*, force: bool = False) -> BracketSnapshot:
     sim = simulate(strengths, matches, settings.monte_carlo_runs)
     odds_sorted = sorted(sim["odds"].values(), key=lambda o: o["win_title"], reverse=True)
 
-    narrative = write_narrative(client, sim["odds"], sim["bracket"])
+    # Regenerate the analyst narrative only when something actually changed;
+    # otherwise reuse the last one so a no-op refresh costs nothing.
+    if n_scouted > 0 or force:
+        narrative = write_narrative(client, sim["odds"], sim["bracket"])
+    else:
+        narrative = (db.get_latest_snapshot() or {}).get("analyst_narrative", "")
 
     snapshot = BracketSnapshot(
         created_at=db.now_iso(),
