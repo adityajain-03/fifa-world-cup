@@ -5,14 +5,14 @@ import logging
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.routes import router
 from .config import BASE_DIR, settings
 from .db import get_last_crawl, init_db
-from .services.refresh import run_refresh
+from .services.refresh import poll_results, run_refresh
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("fifa")
@@ -20,31 +20,38 @@ log = logging.getLogger("fifa")
 scheduler = AsyncIOScheduler()
 
 
-def _scheduled_refresh() -> None:
-    log.info("Scheduled daily refresh starting")
+def _scheduled_full_refresh() -> None:
+    log.info("Scheduled full refresh starting")
     try:
         run_refresh()
     except Exception:  # noqa: BLE001 - scheduler must never crash
         log.exception("Scheduled refresh failed")
 
 
+def _scheduled_results_poll() -> None:
+    try:
+        poll_results()
+    except Exception:  # noqa: BLE001
+        log.exception("Results poll failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Frequent, LLM-free live poll: updates bracket/odds when results change.
+    # (News/ratings stay manual via the Refresh button — see services/refresh.)
     scheduler.add_job(
-        _scheduled_refresh,
-        CronTrigger(hour=settings.daily_refresh_hour, minute=settings.daily_refresh_minute),
-        id="daily_refresh",
+        _scheduled_results_poll,
+        IntervalTrigger(minutes=settings.results_poll_minutes),
+        id="results_poll",
         replace_existing=True,
+        next_run_time=None,
     )
     scheduler.start()
-    log.info(
-        "Scheduler started; daily refresh at %02d:%02d local",
-        settings.daily_refresh_hour, settings.daily_refresh_minute,
-    )
+    log.info("Scheduler started; live results poll every %d min", settings.results_poll_minutes)
     if settings.refresh_on_startup and get_last_crawl() is None:
-        # First boot with an empty DB: populate in the background.
-        scheduler.add_job(_scheduled_refresh, id="startup_refresh", replace_existing=True)
+        # First boot with an empty DB: populate fully in the background.
+        scheduler.add_job(_scheduled_full_refresh, id="startup_refresh", replace_existing=True)
     yield
     scheduler.shutdown(wait=False)
 

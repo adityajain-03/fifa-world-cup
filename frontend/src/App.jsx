@@ -58,15 +58,14 @@ export default function App() {
     return () => clearInterval(id);
   }, [loadStatus, loadData]);
 
-  // When a running refresh finishes, reload the data once.
-  const [wasRunning, setWasRunning] = useState(false);
+  // Reload data whenever a new prediction snapshot appears — covers both the
+  // manual refresh finishing and the live results poll updating the bracket.
+  const [lastPred, setLastPred] = useState(null);
   useEffect(() => {
-    if (status?.refresh_running) setWasRunning(true);
-    else if (wasRunning) {
-      setWasRunning(false);
-      loadData();
-    }
-  }, [status, wasRunning, loadData]);
+    const t = status?.last_prediction_at;
+    if (t && lastPred !== null && t !== lastPred) loadData();
+    if (t) setLastPred(t);
+  }, [status, lastPred, loadData]);
 
   const odds = bracket?.odds || [];
 

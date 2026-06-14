@@ -156,3 +156,56 @@ def run_predictions(*, force: bool = False) -> BracketSnapshot:
     log.info("Predictions complete (grounded=%s, champion=%s)",
              client.available, sim["bracket"].get("champion", {}).get("team"))
     return snapshot
+
+
+def _cached_dossiers(teams: list[Team]) -> dict[str, ScoutDossier]:
+    """Load stored dossiers (ratings) without any LLM calls; prior-fallback if missing."""
+    import json
+
+    rows = db.get_dossiers()
+    out: dict[str, ScoutDossier] = {}
+    for t in teams:
+        row = rows.get(t.id)
+        out[t.id] = ScoutDossier(**json.loads(row["payload_json"])) if row else _prior_dossier(t)
+    return out
+
+
+def run_simulation_only() -> BracketSnapshot:
+    """Recompute match probabilities + bracket + odds from the CURRENT results
+    using existing cached ratings. No crawling, no LLM — fast and free. Used by
+    the live results poll so the bracket updates as matches finish.
+    """
+    teams = db.get_teams()
+    matches = db.get_matches()
+    if not teams:
+        raise RuntimeError("No teams in DB; run a refresh first.")
+
+    data_version = compute_data_version(teams, matches)
+    dossiers = _cached_dossiers(teams)
+    strengths = to_strengths(teams, dossiers)
+
+    preds = compute_match_predictions(strengths, matches)
+    db.store_match_predictions(preds, data_version)
+
+    sim = simulate(strengths, matches, settings.monte_carlo_runs)
+    odds_sorted = sorted(sim["odds"].values(), key=lambda o: o["win_title"], reverse=True)
+
+    # Reuse the last narrative (analyst is an LLM call — skipped on the cheap path).
+    prev = db.get_latest_snapshot() or {}
+    grounded = any(d.briefing for d in dossiers.values())
+
+    snapshot = BracketSnapshot(
+        created_at=db.now_iso(),
+        data_version=data_version,
+        grounded=grounded,
+        odds=odds_sorted,
+        bracket=sim["bracket"],
+        group_predictions=sim["group_predictions"],
+        analyst_narrative=prev.get("analyst_narrative", ""),
+    )
+    db.store_snapshot(snapshot)
+    db.set_meta("last_prediction_at", snapshot.created_at)
+    db.set_meta("data_version", data_version)
+    log.info("Re-simulated from cached ratings (champion=%s)",
+             sim["bracket"].get("champion", {}).get("team"))
+    return snapshot

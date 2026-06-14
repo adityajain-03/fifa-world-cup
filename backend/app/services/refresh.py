@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import logging
 
+import hashlib
 import json
 
 from .. import db
-from ..agents.orchestrator import run_predictions
+from ..agents.orchestrator import run_predictions, run_simulation_only
 from ..crawlers import espn, news, wikipedia
 from ..crawlers.seed import seed_teams
 
@@ -85,15 +86,50 @@ def crawl_and_store() -> dict:
 
 
 def run_refresh(*, force_predictions: bool = False) -> dict:
-    """Full pipeline used by the scheduler and the /api/refresh endpoint."""
+    """Full pipeline used by the manual refresh button: crawl everything (incl.
+    news web search) + re-scout + simulate."""
     log.info("Refresh: crawling sources")
     crawl_result = crawl_and_store()
     log.info("Refresh: running predictions")
     snapshot = run_predictions(force=force_predictions)
+    db.set_meta("results_hash", _results_hash(db.get_matches()))
     return {
         "crawl": crawl_result,
         "grounded": snapshot.grounded,
         "data_version": snapshot.data_version,
+        "champion": snapshot.bracket.get("champion", {}).get("team")
+        if isinstance(snapshot.bracket, dict) else None,
+    }
+
+
+def _results_hash(matches) -> str:
+    h = hashlib.sha256()
+    for m in sorted(matches, key=lambda x: x.id):
+        if m.status in ("finished", "live"):
+            h.update(f"{m.id}:{m.home_score}:{m.away_score}:{m.status}".encode())
+    return h.hexdigest()[:16]
+
+
+def poll_results() -> dict:
+    """Cheap, LLM-free live update: fetch recent ESPN results; if any changed,
+    re-simulate the bracket/odds from cached ratings. Runs frequently."""
+    try:
+        recent = espn.crawl_matches(dates=espn.recent_dates(days_back=1), ttl_hours=0.05)
+        if recent:
+            db.upsert_matches(recent)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Live results poll: crawl failed (%s)", exc)
+        return {"updated": False, "reason": "crawl failed"}
+
+    new_hash = _results_hash(db.get_matches())
+    if new_hash == db.get_meta("results_hash"):
+        return {"updated": False, "reason": "no change"}
+
+    snapshot = run_simulation_only()
+    db.set_meta("results_hash", new_hash)
+    log.info("Live results changed → bracket/odds updated")
+    return {
+        "updated": True,
         "champion": snapshot.bracket.get("champion", {}).get("team")
         if isinstance(snapshot.bracket, dict) else None,
     }

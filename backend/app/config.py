@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     daily_refresh_minute: int = 0
     # Run a refresh once shortly after startup if the DB is empty.
     refresh_on_startup: bool = True
+    # How often to poll ESPN for live results and re-simulate the bracket/odds.
+    # Cheap + LLM-free: only the deterministic model runs, using cached ratings.
+    results_poll_minutes: int = 5
 
     # --- Concurrency for Scout agents ---
     scout_concurrency: int = 4

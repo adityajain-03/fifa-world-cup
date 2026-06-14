@@ -51,14 +51,16 @@ def _status(state: str, completed: bool) -> str:
     return "scheduled"
 
 
-def crawl_matches() -> list[Match]:
+def crawl_matches(*, dates: list[date] | None = None, ttl_hours: float = 1.0) -> list[Match]:
+    """Parse matches from ESPN. By default walks the whole tournament window;
+    pass `dates` (with a short `ttl_hours`) for a light live-results poll.
+    """
+    day_list = dates if dates is not None else _all_dates()
     matches: dict[str, Match] = {}
-    d = TOURNAMENT_START
-    while d <= TOURNAMENT_END:
+    for d in day_list:
         try:
-            data = fetch_json(SCOREBOARD, params={"dates": d.strftime("%Y%m%d")}, ttl_hours=1.0)
+            data = fetch_json(SCOREBOARD, params={"dates": d.strftime("%Y%m%d")}, ttl_hours=ttl_hours)
         except Exception:  # noqa: BLE001
-            d += timedelta(days=1)
             continue
         for ev in data.get("events", []):
             try:
@@ -68,9 +70,26 @@ def crawl_matches() -> list[Match]:
                 continue
             if m:
                 matches[m.id] = m
-        d += timedelta(days=1)
-    log.info("ESPN: parsed %d matches", len(matches))
+    log.info("ESPN: parsed %d matches (%d dates)", len(matches), len(day_list))
     return list(matches.values())
+
+
+def _all_dates() -> list[date]:
+    out, d = [], TOURNAMENT_START
+    while d <= TOURNAMENT_END:
+        out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+def recent_dates(days_back: int = 1) -> list[date]:
+    """Today and the prior `days_back` days, clamped to the tournament window —
+    where live/just-finished matches are, for the cheap results poll."""
+    from datetime import datetime
+
+    today = datetime.now().date()
+    today = max(TOURNAMENT_START, min(today, TOURNAMENT_END))
+    return [today - timedelta(days=i) for i in range(days_back + 1)]
 
 
 def _parse_event(ev: dict, d: date) -> Match | None:

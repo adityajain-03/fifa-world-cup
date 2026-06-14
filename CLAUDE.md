@@ -45,10 +45,23 @@ ratings fall back to FIFA-rank priors, and the Elo/Poisson/Monte-Carlo bracket
 still renders (`grounded=false`). Set the key and refresh to enable Scout
 analysis.
 
-## Data flow
+## Update model (two paths)
 
-`services/refresh.py` runs the daily pipeline (APScheduler at 06:00 local, and
-on `POST /api/refresh`):
+- **Live results poll (automatic, cheap, LLM-free)** — `services/refresh.poll_results()`
+  runs every `RESULTS_POLL_MINUTES` (default 5) via APScheduler. It fetches only
+  recent ESPN dates (short cache), and if a result changed, re-runs the
+  deterministic match-prob model + 10k sim from the **cached ratings**
+  (`orchestrator.run_simulation_only()`) → updated bracket/odds. No crawl of
+  Wikipedia/news, no Claude calls. This is what keeps the bracket live as matches
+  finish. Frontend auto-reloads when `last_prediction_at` changes.
+- **Full refresh (manual, expensive)** — `POST /api/refresh` (owner-only, gated by
+  `ADMIN_TOKEN`) runs `run_refresh()`: crawl ESPN+Wikipedia+news, re-scout teams
+  (Claude news web search → ratings), simulate. This is the only path that spends
+  API credit.
+
+## Data flow (full refresh)
+
+`services/refresh.run_refresh()` (manual button / `POST /api/refresh`):
 
 1. **ESPN JSON API** (`crawlers/espn.py`) — authoritative for fixtures, results,
    live scores.
