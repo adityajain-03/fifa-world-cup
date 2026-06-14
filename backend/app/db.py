@@ -196,7 +196,8 @@ def upsert_matches(matches: Iterable[Match]) -> None:
                 'INSERT INTO matches(id, stage, "group", date, home_id, away_id, '
                 "home_name, away_name, home_score, away_score, status) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
-                'stage=excluded.stage, "group"=excluded."group", date=excluded.date, '
+                'stage=excluded.stage, '
+                '"group"=COALESCE(excluded."group", matches."group"), date=excluded.date, '
                 "home_id=COALESCE(excluded.home_id, matches.home_id), "
                 "away_id=COALESCE(excluded.away_id, matches.away_id), "
                 "home_name=COALESCE(excluded.home_name, matches.home_name), "

@@ -52,6 +52,10 @@ async def lifespan(app: FastAPI):
     if settings.refresh_on_startup and get_last_crawl() is None:
         # First boot with an empty DB: populate fully in the background.
         scheduler.add_job(_scheduled_full_refresh, id="startup_refresh", replace_existing=True)
+    else:
+        # Booting from the seed: poll latest results immediately so the bracket
+        # is current within seconds instead of waiting for the first interval.
+        scheduler.add_job(_scheduled_results_poll, id="startup_poll", replace_existing=True)
     yield
     scheduler.shutdown(wait=False)
 

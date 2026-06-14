@@ -116,6 +116,7 @@ def poll_results() -> dict:
     try:
         recent = espn.crawl_matches(dates=espn.recent_dates(days_back=1), ttl_hours=0.05)
         if recent:
+            espn.assign_match_groups(recent, db.get_teams())  # keep group labels
             db.upsert_matches(recent)
     except Exception as exc:  # noqa: BLE001
         log.warning("Live results poll: crawl failed (%s)", exc)
