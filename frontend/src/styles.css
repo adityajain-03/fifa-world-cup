@@ -137,6 +137,10 @@ code { background: #0008; padding: 1px 5px; border-radius: 4px; }
 .bt-side:last-child { border-bottom: 0; }
 .bt-side.win { color: var(--text); font-weight: 700; background: #10241a; }
 .bt-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bt-grp { display: inline-block; font-size: 8px; font-weight: 700; color: var(--bg);
+  background: var(--muted); border-radius: 3px; padding: 0 3px; margin-right: 4px;
+  vertical-align: middle; }
+.bt-side.win .bt-grp { background: var(--accent); }
 .bt-prob { font-size: 9px; color: var(--muted); margin-left: 4px; flex: none; }
 
 .bf-champ-col .bf-body { justify-content: center; }

@@ -11,20 +11,26 @@ const ROUNDS = [
   ["final", "Final"],
 ];
 
+function Side({ name, group, win, prob }) {
+  return (
+    <div className={win ? "bt-side win" : "bt-side"}>
+      <span className="bt-name">
+        {group && <span className="bt-grp">{group}</span>}
+        {name}
+      </span>
+      <span className="bt-prob">{prob}%</span>
+    </div>
+  );
+}
+
 function TieBox({ tie }) {
   if (!tie) return null;
   const homeWin = tie.winner_id === tie.home_id;
   const ph = Math.round(tie.p_home_advance * 100);
   return (
     <div className="bt-tie">
-      <div className={homeWin ? "bt-side win" : "bt-side"}>
-        <span className="bt-name">{tie.home}</span>
-        <span className="bt-prob">{ph}%</span>
-      </div>
-      <div className={!homeWin ? "bt-side win" : "bt-side"}>
-        <span className="bt-name">{tie.away}</span>
-        <span className="bt-prob">{100 - ph}%</span>
-      </div>
+      <Side name={tie.home} group={tie.home_group} win={homeWin} prob={ph} />
+      <Side name={tie.away} group={tie.away_group} win={!homeWin} prob={100 - ph} />
     </div>
   );
 }
@@ -48,7 +54,10 @@ export default function BracketView({ bracket }) {
         <div className="bf-body">
           <div className="bt-champion">
             <div className="bt-trophy">🏆</div>
-            <div className="bt-champ-name">{bracket.champion?.team || "TBD"}</div>
+            <div className="bt-champ-name">
+              {bracket.champion?.team || "TBD"}
+              {bracket.champion?.group && <span className="bt-grp">{bracket.champion.group}</span>}
+            </div>
           </div>
         </div>
       </div>

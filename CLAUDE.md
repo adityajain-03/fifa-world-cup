@@ -126,9 +126,13 @@ now** button / `curl -XPOST localhost:8000/api/refresh`.
   downgrade the model or reintroduce `budget_tokens`.
 - Team identity is a **slug** (`name_slug()` in `crawlers/aliases.py`). Always
   route new name sources through there so identities stay consistent.
-- The knockout bracket is **rating-seeded** (standard 1-vs-32 seeding), not the
-  official FIFA slot map; group results already played are always respected,
-  but real *knockout* results aren't yet pinned into the predicted bracket.
+- The knockout bracket follows the **official 2026 FIFA slot map**
+  (`model/bracket_map.py`, verified against ESPN: R32 match 1 = "Group A 2nd v
+  Group B 2nd", etc.). Group winners/runners-up resolve exactly from the
+  standings; the 8 best thirds are assigned to their eligible third-slots. Group
+  results already played are respected; real *knockout* results aren't yet pinned
+  into the predicted bracket. The third-place slot assignment uses an
+  eligibility-respecting matching rather than FIFA's exact lookup table.
 - Crawlers cache raw responses under `backend/data/html_cache/` (TTL in config)
   and fall back to stale cache on network failure; runs are logged to
   `crawl_runs`.

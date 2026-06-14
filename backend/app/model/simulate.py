@@ -5,11 +5,11 @@ already played, simulate the whole tournament N times to produce per-team
 advancement and title probabilities, plus a deterministic "favourite" bracket
 for display.
 
-The knockout bracket is *rating-seeded* (standard 1-vs-32 seeding of the 32
-qualifiers) rather than the official FIFA slot map — the official slotting
-depends on which third-placed teams advance and is intricate; a rating-seeded
-single-elimination bracket is reproducible and well-balanced. Group results
-that have already happened are always respected.
+The knockout bracket follows the **official 2026 FIFA slot map** (see
+`bracket_map.py`, verified against ESPN's published fixtures): group winners,
+runners-up, and the 8 best third-placed teams are placed into fixed R32 slots
+(e.g. R32 match 1 is "Group A 2nd v Group B 2nd"), and winners advance through
+the fixed tree. Group results already played are always respected.
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from ..models import Match
+from . import bracket_map as bm
 from .ratings import MatchProb, TeamStrength, match_probabilities
 
 KO_ROUNDS = ["round_of_32", "round_of_16", "quarter_final", "semi_final", "final"]
@@ -33,7 +34,6 @@ class _Finished:
 
 
 def _sample_poisson(lam: float) -> int:
-    # Knuth's algorithm; fine for the small lambdas (~1-2) used here.
     L = math.exp(-lam)
     k, p = 0, 1.0
     while True:
@@ -41,18 +41,6 @@ def _sample_poisson(lam: float) -> int:
         p *= random.random()
         if p <= L:
             return k - 1
-
-
-def _seed_order(n: int) -> list[int]:
-    """Standard single-elimination seeding order for a bracket of size n."""
-    if n == 1:
-        return [1]
-    prev = _seed_order(n // 2)
-    out: list[int] = []
-    for s in prev:
-        out.append(s)
-        out.append(n + 1 - s)
-    return out
 
 
 class Simulator:
@@ -96,8 +84,12 @@ class Simulator:
             return self.finished_group[(a, b)]
         if (b, a) in self.finished_group:
             f = self.finished_group[(b, a)]
-            return _Finished(a, b, f.away_score, f.home_score)  # flip orientation
+            return _Finished(a, b, f.away_score, f.home_score)
         return None
+
+    def _group(self, tid: str) -> str | None:
+        t = self.teams.get(tid)
+        return t.group if t else None
 
     # -- group stage -----------------------------------------------------
     def _sim_group(self, group: str) -> list[str]:
@@ -125,68 +117,95 @@ class Simulator:
                     pts[a] += 1; pts[b] += 1
         return sorted(ids, key=lambda i: (pts[i], gd[i], gf[i]), reverse=True)
 
-    def _sim_knockout(self, qualifiers: list[str]) -> dict:
-        """Single elimination over rating-seeded qualifiers. Returns reached map."""
-        seeds = sorted(qualifiers, key=lambda i: self.teams[i].rating, reverse=True)
-        order = _seed_order(len(seeds))
-        bracket = [seeds[s - 1] for s in order]
-        reached = {"round_of_32": list(bracket)}
-        round_idx = 0
-        while len(bracket) > 1:
-            nxt: list[str] = []
-            for i in range(0, len(bracket), 2):
-                a, b = bracket[i], bracket[i + 1]
-                mp = self._prob(a, b, knockout=True)
-                nxt.append(a if random.random() < mp.advance_home else b)
-            bracket = nxt
-            round_idx += 1
-            if round_idx < len(KO_ROUNDS):
-                reached[KO_ROUNDS[round_idx]] = list(bracket)
-        reached["champion"] = bracket[0]
-        return reached
+    # -- official knockout bracket --------------------------------------
+    def _qualifiers(self, orders: dict[str, list[str]]) -> tuple[dict, dict, dict]:
+        """From each group's finishing order, return winners{group}, runners{group}
+        and the third-slot assignment {r32_index: team_id} for the best 8 thirds."""
+        winners = {g: o[0] for g, o in orders.items() if len(o) >= 1}
+        runners = {g: o[1] for g, o in orders.items() if len(o) >= 2}
+        thirds = {g: o[2] for g, o in orders.items() if len(o) >= 3}
+        # Best 8 thirds by rating (proxy for the real pts/gd/gf ranking).
+        best = sorted(thirds, key=lambda g: self.teams[thirds[g]].rating, reverse=True)[:8]
+        qualified = {g: thirds[g] for g in best}
+        assigned = bm.assign_thirds(qualified)
+        return winners, runners, assigned
+
+    def _resolve_r32(self, winners: dict, runners: dict, thirds: dict) -> list[tuple]:
+        pairs = []
+        for idx, (home_slot, away_slot) in enumerate(bm.R32_SLOTS, start=1):
+            pairs.append((
+                self._slot_team(home_slot, winners, runners, thirds, idx),
+                self._slot_team(away_slot, winners, runners, thirds, idx),
+            ))
+        return pairs
+
+    @staticmethod
+    def _slot_team(slot, winners, runners, thirds, idx):
+        kind = slot[0]
+        if kind == "W":
+            return winners.get(slot[1])
+        if kind == "R":
+            return runners.get(slot[1])
+        return thirds.get(idx)  # "T" — assigned by r32 match index
+
+    def _winner(self, a: str | None, b: str | None, sample: bool) -> str | None:
+        if not a or not b:
+            return a or b
+        mp = self._prob(a, b, knockout=True)
+        if sample:
+            return a if random.random() < mp.advance_home else b
+        return a if mp.advance_home >= mp.advance_away else b
+
+    def _play(self, r32_pairs: list[tuple], sample: bool) -> dict:
+        """Advance the official tree; return {round: set(team_ids)} + champion."""
+        r32_w = {i: self._winner(a, b, sample) for i, (a, b) in enumerate(r32_pairs, 1)}
+        r16_w = {j: self._winner(r32_w[x], r32_w[y], sample)
+                 for j, (x, y) in enumerate(bm.R16_PAIRS, 1)}
+        qf_w = {k: self._winner(r16_w[x], r16_w[y], sample)
+                for k, (x, y) in enumerate(bm.QF_PAIRS, 1)}
+        sf_w = {l: self._winner(qf_w[x], qf_w[y], sample)
+                for l, (x, y) in enumerate(bm.SF_PAIRS, 1)}
+        champ = self._winner(sf_w[bm.FINAL_PAIR[0]], sf_w[bm.FINAL_PAIR[1]], sample)
+        participants = {t for pair in r32_pairs for t in pair if t}
+        return {
+            "round_of_32": participants,
+            "round_of_16": set(v for v in r32_w.values() if v),
+            "quarter_final": set(v for v in r16_w.values() if v),
+            "semi_final": set(v for v in qf_w.values() if v),
+            "final": set(v for v in sf_w.values() if v),
+            "champion": champ,
+        }
 
     # -- public ----------------------------------------------------------
     def run(self) -> dict:
         title = defaultdict(int)
-        reach = {r: defaultdict(int) for r in ["round_of_32", "round_of_16",
-                                               "quarter_final", "semi_final", "final"]}
+        reach = {r: defaultdict(int) for r in KO_ROUNDS}
         win_group = defaultdict(int)
         advance = defaultdict(int)
 
         for _ in range(self.runs):
-            winners, runners, thirds = [], [], []
-            for g in sorted(self.groups):
-                order = self._sim_group(g)
-                if len(order) >= 1:
-                    winners.append(order[0]); win_group[order[0]] += 1
-                if len(order) >= 2:
-                    runners.append(order[1])
-                if len(order) >= 3:
-                    thirds.append(order[2])
-            # best 8 thirds by rating as a proxy (real tiebreak is pts/gd/gf,
-            # but within a single sampled run rating ordering is a fair stand-in)
-            best_thirds = sorted(thirds, key=lambda i: self.teams[i].rating, reverse=True)[:8]
-            qualifiers = winners + runners + best_thirds
+            orders = {g: self._sim_group(g) for g in self.groups}
+            for o in orders.values():
+                if o:
+                    win_group[o[0]] += 1
+            winners, runners, thirds = self._qualifiers(orders)
+            qualifiers = set(winners.values()) | set(runners.values()) | set(thirds.values())
             for q in qualifiers:
                 advance[q] += 1
-            # pad to a power of two if a partial field (shouldn't happen at 32)
-            n = 1 << (len(qualifiers) - 1).bit_length() if qualifiers else 0
-            while len(qualifiers) < n:
-                qualifiers.append(qualifiers[-1])
             if len(qualifiers) < 2:
                 continue
-            reached = self._sim_knockout(qualifiers)
-            title[reached["champion"]] += 1
+            reached = self._play(self._resolve_r32(winners, runners, thirds), sample=True)
+            if reached["champion"]:
+                title[reached["champion"]] += 1
             for r in reach:
-                for tid in set(reached.get(r, [])):
+                for tid in reached[r]:
                     reach[r][tid] += 1
 
         runs = self.runs
         odds = {}
         for tid, t in self.teams.items():
             odds[tid] = {
-                "team_id": tid,
-                "team_name": t.name,
+                "team_id": tid, "team_name": t.name, "group": t.group,
                 "rating": round(t.rating, 1),
                 "win_title": title[tid] / runs,
                 "reach_final": reach["final"][tid] / runs,
@@ -203,50 +222,59 @@ class Simulator:
             "group_predictions": self.group_table_predictions(odds),
         }
 
-    # -- deterministic favourite bracket & group tables ------------------
-    def favourite_bracket(self) -> dict:
-        """Most-likely path: the favourite advances at every step."""
-        winners, runners, thirds = [], [], []
-        for g in sorted(self.groups):
-            order = self._expected_group_order(g)
-            if order:
-                winners.append(order[0])
-            if len(order) > 1:
-                runners.append(order[1])
-            if len(order) > 2:
-                thirds.append((order[2], self.teams[order[2]].rating))
-        best_thirds = [t for t, _ in sorted(thirds, key=lambda x: x[1], reverse=True)[:8]]
-        qualifiers = winners + runners + best_thirds
-        if len(qualifiers) < 2:
-            return {}
-        seeds = sorted(qualifiers, key=lambda i: self.teams[i].rating, reverse=True)
-        order = _seed_order(len(seeds))
-        bracket_ids = [seeds[s - 1] for s in order]
+    # -- deterministic favourite bracket --------------------------------
+    def _tie(self, a: str | None, b: str | None) -> tuple[dict, str | None]:
+        def info(tid):
+            t = self.teams.get(tid) if tid else None
+            return (t.name if t else "TBD"), (t.group if t else None)
+        if not a or not b:
+            w = a or b
+            name, grp = info(w)
+            return {"home": info(a)[0], "home_id": a, "home_group": info(a)[1],
+                    "away": info(b)[0], "away_id": b, "away_group": info(b)[1],
+                    "winner": name, "winner_id": w, "winner_group": grp,
+                    "p_home_advance": 1.0 if a else 0.0}, w
+        mp = self._prob(a, b, knockout=True)
+        winner = a if mp.advance_home >= mp.advance_away else b
+        na, ga = info(a); nb, gb = info(b); nw, gw = info(winner)
+        return {
+            "home": na, "home_id": a, "home_group": ga,
+            "away": nb, "away_id": b, "away_group": gb,
+            "winner": nw, "winner_id": winner, "winner_group": gw,
+            "p_home_advance": round(mp.advance_home, 3),
+        }, winner
 
-        rounds: dict[str, list] = {}
-        ridx = 0
-        while len(bracket_ids) > 1:
-            ties = []
-            nxt = []
-            for i in range(0, len(bracket_ids), 2):
-                a, b = bracket_ids[i], bracket_ids[i + 1]
-                mp = self._prob(a, b, knockout=True)
-                winner = a if mp.advance_home >= mp.advance_away else b
-                ties.append({
-                    "home": self.teams[a].name, "home_id": a,
-                    "away": self.teams[b].name, "away_id": b,
-                    "winner": self.teams[winner].name, "winner_id": winner,
-                    "p_home_advance": round(mp.advance_home, 3),
-                })
-                nxt.append(winner)
-            rounds[KO_ROUNDS[ridx]] = ties
-            bracket_ids = nxt
-            ridx += 1
-        rounds["champion"] = {
-            "team_id": bracket_ids[0],
-            "team": self.teams[bracket_ids[0]].name,
+    def favourite_bracket(self) -> dict:
+        orders = {g: self._expected_group_order(g) for g in self.groups}
+        winners, runners, thirds = self._qualifiers(orders)
+        r32_pairs = self._resolve_r32(winners, runners, thirds)
+        if sum(1 for a, b in r32_pairs if a and b) == 0:
+            return {}
+
+        r32_ties, r32_w = [], {}
+        for i, (a, b) in enumerate(r32_pairs, 1):
+            tie, w = self._tie(a, b); r32_ties.append(tie); r32_w[i] = w
+        r16_ties, r16_w = [], {}
+        for j, (x, y) in enumerate(bm.R16_PAIRS, 1):
+            tie, w = self._tie(r32_w[x], r32_w[y]); r16_ties.append(tie); r16_w[j] = w
+        qf_ties, qf_w = [], {}
+        for k, (x, y) in enumerate(bm.QF_PAIRS, 1):
+            tie, w = self._tie(r16_w[x], r16_w[y]); qf_ties.append(tie); qf_w[k] = w
+        sf_ties, sf_w = [], {}
+        for l, (x, y) in enumerate(bm.SF_PAIRS, 1):
+            tie, w = self._tie(qf_w[x], qf_w[y]); sf_ties.append(tie); sf_w[l] = w
+        final_tie, champ = self._tie(sf_w[bm.FINAL_PAIR[0]], sf_w[bm.FINAL_PAIR[1]])
+
+        ct = self.teams.get(champ)
+        return {
+            "round_of_32": r32_ties,
+            "round_of_16": r16_ties,
+            "quarter_final": qf_ties,
+            "semi_final": sf_ties,
+            "final": [final_tie],
+            "champion": {"team_id": champ, "team": ct.name if ct else "TBD",
+                         "group": ct.group if ct else None},
         }
-        return rounds
 
     def _expected_group_order(self, group: str) -> list[str]:
         ids = self.groups[group]
@@ -296,8 +324,7 @@ class Simulator:
             ordered = sorted(ids, key=lambda i: pts[i], reverse=True)
             out[g] = [
                 {
-                    "team_id": i,
-                    "team_name": self.teams[i].name,
+                    "team_id": i, "team_name": self.teams[i].name,
                     "expected_points": round(pts[i], 2),
                     "win_group": round(odds[i]["win_group"], 3),
                     "advance": round(odds[i]["advance_group"], 3),
