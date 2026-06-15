@@ -270,12 +270,17 @@ class Simulator:
             tie, w = self._tie(qf_w[x], qf_w[y]); sf_ties.append(tie); sf_w[l] = w
         final_tie, champ = self._tie(sf_w[bm.FINAL_PAIR[0]], sf_w[bm.FINAL_PAIR[1]])
 
+        # Reorder each round into tree (top-to-bottom) order so the columns align
+        # as a bracket: each match sits between the two feeders that produced it.
+        def order(ties, display):
+            return [ties[i - 1] for i in display]
+
         ct = self.teams.get(champ)
         return {
-            "round_of_32": r32_ties,
-            "round_of_16": r16_ties,
-            "quarter_final": qf_ties,
-            "semi_final": sf_ties,
+            "round_of_32": order(r32_ties, bm.R32_DISPLAY),
+            "round_of_16": order(r16_ties, bm.R16_DISPLAY),
+            "quarter_final": order(qf_ties, bm.QF_DISPLAY),
+            "semi_final": order(sf_ties, bm.SF_DISPLAY),
             "final": [final_tie],
             "champion": {"team_id": champ, "team": ct.name if ct else "TBD",
                          "group": ct.group if ct else None},

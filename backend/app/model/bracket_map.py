@@ -60,6 +60,15 @@ FINAL_PAIR = (1, 2)                            # indices into SF winners
 # R32 match indices whose away slot is a third-placed team, with eligible groups.
 THIRD_SLOT_INDICES = [i for i, (_, away) in enumerate(R32_SLOTS, start=1) if away[0] == "T"]
 
+# Tree (top-to-bottom) display order for each round, derived from the linkage by
+# a DFS of the bracket. Emitting ties in this order makes each round's match sit
+# vertically centred between the two feeder matches in the previous column, so
+# the bracket reads as a tree instead of four unrelated lists.
+R32_DISPLAY = [1, 3, 2, 5, 11, 12, 9, 10, 4, 6, 7, 8, 14, 16, 13, 15]
+R16_DISPLAY = [1, 2, 5, 6, 3, 4, 7, 8]
+QF_DISPLAY = [1, 2, 3, 4]
+SF_DISPLAY = [1, 2]
+
 
 def slot_label(slot: tuple) -> str:
     """Human-readable slot code: 'A1' (group winner), 'A2' (runner-up), '3rd'."""
