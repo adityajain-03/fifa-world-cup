@@ -53,6 +53,19 @@ class Simulator:
                 self.groups[t.group].append(t.id)
         self.finished_group = self._finished_group(matches)
         self._prob_cache: dict[tuple[str, str, bool], MatchProb] = {}
+        # KO fixtures per stage, in official order (match number / kickoff), so we
+        # can stamp each bracket tie with its official number + kickoff time.
+        self.ko_matches: dict[str, list[Match]] = defaultdict(list)
+        for m in sorted(matches, key=lambda x: (x.number or 0, x.kickoff or "")):
+            if m.stage in (
+                "round_of_32", "round_of_16", "quarter_final", "semi_final", "final"
+            ):
+                self.ko_matches[m.stage].append(m)
+
+    def _annotate(self, ties: list[dict], stage: str) -> None:
+        for tie, m in zip(ties, self.ko_matches.get(stage, [])):
+            tie["number"] = m.number
+            tie["kickoff"] = m.kickoff
 
     # -- helpers ---------------------------------------------------------
     def _finished_group(self, matches: list[Match]) -> dict[tuple[str, str], _Finished]:
@@ -269,6 +282,13 @@ class Simulator:
         for l, (x, y) in enumerate(bm.SF_PAIRS, 1):
             tie, w = self._tie(qf_w[x], qf_w[y]); sf_ties.append(tie); sf_w[l] = w
         final_tie, champ = self._tie(sf_w[bm.FINAL_PAIR[0]], sf_w[bm.FINAL_PAIR[1]])
+
+        # Stamp official match number + kickoff (built in official order per round).
+        self._annotate(r32_ties, "round_of_32")
+        self._annotate(r16_ties, "round_of_16")
+        self._annotate(qf_ties, "quarter_final")
+        self._annotate(sf_ties, "semi_final")
+        self._annotate([final_tie], "final")
 
         # Reorder each round into tree (top-to-bottom) order so the columns align
         # as a bracket: each match sits between the two feeders that produced it.

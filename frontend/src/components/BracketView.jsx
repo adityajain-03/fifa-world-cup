@@ -41,17 +41,22 @@ function TieBox({ tie, header }) {
   );
 }
 
-// Header text per tie: R32 shows its official match number; R16 shows which two
-// R32 matches feed it (since R16 #i is fed by the i-th adjacent R32 pair).
-function headerFor(key, i, tie, bracket) {
-  if (key === "round_of_32") return `Match ${tie.match_no}`;
-  if (key === "round_of_16") {
-    const r = bracket.round_of_32 || [];
-    const a = r[2 * i] && r[2 * i].match_no;
-    const b = r[2 * i + 1] && r[2 * i + 1].match_no;
-    if (a && b) return `Winners M${a} & M${b}`;
-  }
-  return null;
+// Header: official match number + kickoff (local), so each tie is trackable.
+function fmtKO(kickoff) {
+  if (!kickoff) return "";
+  const d = new Date(kickoff);
+  if (isNaN(d)) return "";
+  return d.toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
+}
+
+function headerFor(key, i, tie) {
+  const parts = [];
+  if (tie.number) parts.push(`#${tie.number}`);
+  const ko = fmtKO(tie.kickoff);
+  if (ko) parts.push(ko);
+  return parts.join(" · ") || null;
 }
 
 export default function BracketView({ bracket }) {
@@ -71,7 +76,7 @@ export default function BracketView({ bracket }) {
           <div className="bf-label">{label}</div>
           <div className="bf-body">
             {(bracket[key] || []).map((tie, i) => (
-              <TieBox tie={tie} header={headerFor(key, i, tie, bracket)} key={i} />
+              <TieBox tie={tie} header={headerFor(key, i, tie)} key={i} />
             ))}
           </div>
         </div>
