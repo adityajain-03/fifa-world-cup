@@ -275,9 +275,15 @@ class Simulator:
         def order(ties, display):
             return [ties[i - 1] for i in display]
 
+        # Renumber R32 in bracket order (1..16 top-to-bottom) so consecutive pairs
+        # feed each R16 match in order — no need to map ESPN's official numbering.
+        r32_ordered = order(r32_ties, bm.R32_DISPLAY)
+        for n, tie in enumerate(r32_ordered, 1):
+            tie["match_no"] = n
+
         ct = self.teams.get(champ)
         return {
-            "round_of_32": order(r32_ties, bm.R32_DISPLAY),
+            "round_of_32": r32_ordered,
             "round_of_16": order(r16_ties, bm.R16_DISPLAY),
             "quarter_final": order(qf_ties, bm.QF_DISPLAY),
             "semi_final": order(sf_ties, bm.SF_DISPLAY),
