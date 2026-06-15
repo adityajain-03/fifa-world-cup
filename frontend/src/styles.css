@@ -96,6 +96,8 @@ code { background: #0008; padding: 1px 5px; border-radius: 4px; }
 .chip { background: var(--panel2); border: 1px solid var(--line); color: var(--muted); padding: 4px 12px; border-radius: 20px; cursor: pointer; font-size: 12px; margin-right: 4px; }
 .chip.active { background: var(--accent2); color: #04140a; font-weight: 700; }
 .matches td.date { color: var(--muted); white-space: nowrap; }
+.matches td.mno { color: var(--muted); font-size: 12px; text-align: right; width: 32px; }
+.ko-time { display: block; font-size: 11px; color: var(--accent); }
 .matches .vs { color: var(--muted); margin: 0 4px; }
 .grp { font-size: 10px; color: var(--muted); margin-left: 8px; }
 .score { font-weight: 700; white-space: nowrap; }

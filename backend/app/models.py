@@ -38,7 +38,9 @@ class Match(BaseModel):
     id: str
     stage: Stage
     group: Optional[str] = None
-    date: Optional[str] = None  # ISO date
+    date: Optional[str] = None       # ISO date (YYYY-MM-DD)
+    kickoff: Optional[str] = None     # full ISO datetime (UTC) from ESPN
+    number: Optional[int] = None      # match number (1..104), chronological
     home_id: Optional[str] = None
     away_id: Optional[str] = None
     home_name: Optional[str] = None

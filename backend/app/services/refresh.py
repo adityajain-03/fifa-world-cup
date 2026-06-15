@@ -36,6 +36,7 @@ def crawl_and_store() -> dict:
             teams = espn.build_field(matches)  # connected-components fallback
             field_source = "espn-components"
         espn.assign_match_groups(matches, teams)
+        espn.assign_match_numbers(matches)  # official-style 1..N by kickoff order
         if len(teams) >= 48:
             db.upsert_teams(teams)
             db.upsert_matches(matches)

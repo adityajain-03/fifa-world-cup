@@ -126,6 +126,7 @@ def _parse_event(ev: dict, d: date) -> Match | None:
         stage=stage,
         group=None,
         date=(ev.get("date") or d.isoformat())[:10],
+        kickoff=ev.get("date"),  # full ISO datetime (UTC)
         home_id=None if h_ph else name_slug(hname),
         away_id=None if a_ph else name_slug(aname),
         home_name=hname,
@@ -148,6 +149,15 @@ def field_from_groups(groups: dict[str, list[str]]) -> list[Team]:
                 fifa_rank=fifa_rank_for(nm),
             ))
     return teams
+
+
+def assign_match_numbers(matches: list[Match]) -> None:
+    """Assign official-style match numbers 1..N by kickoff order. FIFA numbers
+    matches in schedule order, so chronological numbering matches the official
+    scheme (group stage 1..72, then knockouts). Must run over the FULL match set."""
+    ordered = sorted(matches, key=lambda m: (m.kickoff or m.date or "", m.id))
+    for n, m in enumerate(ordered, start=1):
+        m.number = n
 
 
 def assign_match_groups(matches: list[Match], teams: list[Team]) -> None:

@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS matches (
     stage TEXT NOT NULL,
     "group" TEXT,
     date TEXT,
+    kickoff TEXT,
+    number INTEGER,
     home_id TEXT,
     away_id TEXT,
     home_name TEXT,
@@ -113,6 +115,12 @@ def init_db() -> None:
         shutil.copy(settings.seed_db_path, settings.db_path)
     with connect() as conn:
         conn.executescript(SCHEMA)
+        # Migrate older DBs (e.g. the seed) that predate these columns.
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(matches)")}
+        if "kickoff" not in cols:
+            conn.execute("ALTER TABLE matches ADD COLUMN kickoff TEXT")
+        if "number" not in cols:
+            conn.execute("ALTER TABLE matches ADD COLUMN number INTEGER")
 
 
 # --- meta key/value -------------------------------------------------------
@@ -198,11 +206,13 @@ def upsert_matches(matches: Iterable[Match]) -> None:
     with connect() as conn:
         for m in matches:
             conn.execute(
-                'INSERT INTO matches(id, stage, "group", date, home_id, away_id, '
-                "home_name, away_name, home_score, away_score, status) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                'INSERT INTO matches(id, stage, "group", date, kickoff, number, '
+                "home_id, away_id, home_name, away_name, home_score, away_score, status) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                 'stage=excluded.stage, '
                 '"group"=COALESCE(excluded."group", matches."group"), date=excluded.date, '
+                "kickoff=COALESCE(excluded.kickoff, matches.kickoff), "
+                "number=COALESCE(excluded.number, matches.number), "
                 "home_id=COALESCE(excluded.home_id, matches.home_id), "
                 "away_id=COALESCE(excluded.away_id, matches.away_id), "
                 "home_name=COALESCE(excluded.home_name, matches.home_name), "
@@ -210,7 +220,8 @@ def upsert_matches(matches: Iterable[Match]) -> None:
                 "home_score=excluded.home_score, away_score=excluded.away_score, "
                 "status=excluded.status",
                 (
-                    m.id, m.stage, m.group, m.date, m.home_id, m.away_id,
+                    m.id, m.stage, m.group, m.date, m.kickoff, m.number,
+                    m.home_id, m.away_id,
                     m.home_name, m.away_name, m.home_score, m.away_score, m.status,
                 ),
             )

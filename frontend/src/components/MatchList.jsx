@@ -10,6 +10,20 @@ const STAGES = [
   ["final", "Final"],
 ];
 
+// Format ESPN's UTC kickoff to the viewer's local date + time.
+function fmtDateTime(kickoff, dateOnly) {
+  if (kickoff) {
+    const d = new Date(kickoff);
+    if (!isNaN(d)) {
+      return {
+        date: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        time: d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }),
+      };
+    }
+  }
+  return { date: dateOnly || "", time: "" };
+}
+
 function Pred({ p }) {
   if (!p) return <span className="muted">—</span>;
   return (
@@ -26,7 +40,9 @@ function Pred({ p }) {
 
 export default function MatchList({ matches }) {
   const [stage, setStage] = useState("");
-  const filtered = matches.filter((m) => !stage || m.stage === stage);
+  const filtered = matches
+    .filter((m) => !stage || m.stage === stage)
+    .sort((a, b) => (a.number || 0) - (b.number || 0));
 
   return (
     <div className="card">
@@ -40,15 +56,20 @@ export default function MatchList({ matches }) {
       <table className="tbl matches">
         <thead>
           <tr>
-            <th>Date</th><th>Match</th><th>Result</th><th>Prediction (H/D/A)</th>
+            <th>#</th><th>Date / Time</th><th>Match</th><th>Result</th><th>Prediction (H/D/A)</th>
           </tr>
         </thead>
         <tbody>
           {filtered.map((m) => {
             const done = m.status === "finished" || m.status === "live";
+            const dt = fmtDateTime(m.kickoff, m.date);
             return (
               <tr key={m.id} className={m.status}>
-                <td className="date">{m.date}</td>
+                <td className="mno">{m.number ?? "—"}</td>
+                <td className="date">
+                  {dt.date}
+                  {dt.time && <span className="ko-time">{dt.time}</span>}
+                </td>
                 <td>
                   {m.home_name} <span className="vs">v</span> {m.away_name}
                   {m.group && <span className="grp">Grp {m.group}</span>}
