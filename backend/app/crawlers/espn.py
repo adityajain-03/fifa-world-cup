@@ -10,10 +10,12 @@ group), and letters are assigned by the strongest team in each group.
 from __future__ import annotations
 
 import logging
+import re
 import string
 from collections import defaultdict
 from datetime import date, timedelta
 
+from ..model import bracket_map as bm
 from ..models import Match, Stage, Team
 from .aliases import canonical, fifa_rank_for, is_placeholder, name_slug
 from .base import fetch_json
@@ -151,13 +153,72 @@ def field_from_groups(groups: dict[str, list[str]]) -> list[Team]:
     return teams
 
 
+_GROUP_W_RE = re.compile(r"group\s+([a-l])\s+winner", re.I)
+_GROUP_R_RE = re.compile(r"group\s+([a-l])\s+(?:2nd|runner)", re.I)
+_THIRD_RE = re.compile(r"third\s+place\s+group\s+([a-l/]+)", re.I)
+_FEEDER_RE = re.compile(
+    r"(?:round of 32|round of 16|quarterfinal|semifinal)\s+(\d+)", re.I
+)
+
+
+def _slot_of(name: str | None):
+    """Parse an ESPN R32 placeholder ('Group C Winner', 'Third Place Group A/B/C')
+    into the bracket_map slot tuple, or None if it isn't a group placeholder."""
+    if not name:
+        return None
+    if m := _GROUP_W_RE.search(name):
+        return ("W", m.group(1).upper())
+    if m := _GROUP_R_RE.search(name):
+        return ("R", m.group(1).upper())
+    if m := _THIRD_RE.search(name):
+        return ("T", frozenset(g.upper() for g in m.group(1).split("/")))
+    return None
+
+
+def _official_ko_number(m: Match) -> int | None:
+    """Official FIFA match number (73-104) for a knockout fixture, derived from
+    its slot/feeder placeholders via the published bracket structure. Returns None
+    if the fixture can't be matched (e.g. once real team names replace the
+    placeholders) so the existing number is kept."""
+    if m.stage == "round_of_32":
+        h, a = _slot_of(m.home_name), _slot_of(m.away_name)
+        if h and a:
+            return bm.R32_NUMBER.get(frozenset((h, a)))
+        return None
+    if m.stage == "final":
+        return 104
+    if m.stage == "third_place":
+        return 103
+    # round_of_16 / quarter_final / semi_final reference earlier matches by their
+    # official local index ("Round of 32 N Winner", "Round of 16 N", ...).
+    feeders = {int(x) for x in _FEEDER_RE.findall(f"{m.home_name} {m.away_name}")}
+    if len(feeders) != 2:
+        return None
+    table = {
+        "round_of_16": bm.R16_NUMBER,
+        "quarter_final": bm.QF_NUMBER,
+        "semi_final": bm.SF_NUMBER,
+    }.get(m.stage)
+    return table.get(frozenset(feeders)) if table else None
+
+
 def assign_match_numbers(matches: list[Match]) -> None:
-    """Assign official-style match numbers 1..N by kickoff order. FIFA numbers
-    matches in schedule order, so chronological numbering matches the official
-    scheme (group stage 1..72, then knockouts). Must run over the FULL match set."""
-    ordered = sorted(matches, key=lambda m: (m.kickoff or m.date or "", m.id))
-    for n, m in enumerate(ordered, start=1):
+    """Assign official FIFA match numbers (1..104). Group stage is numbered 1..72
+    by kickoff order; knockout numbers come from the published bracket structure
+    (`bracket_map`), since FIFA's official knockout numbering is NOT chronological
+    (e.g. match 74 = "Winner E v 3rd A/B/C/D/F"). Must run over the FULL match set."""
+    group = sorted(
+        (m for m in matches if m.stage == "group"),
+        key=lambda m: (m.kickoff or m.date or "", m.id),
+    )
+    for n, m in enumerate(group, start=1):
         m.number = n
+    for m in matches:
+        if m.stage == "group":
+            continue
+        num = _official_ko_number(m)
+        if num is not None:
+            m.number = num
 
 
 def assign_match_groups(matches: list[Match], teams: list[Team]) -> None:

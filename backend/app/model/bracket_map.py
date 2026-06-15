@@ -6,15 +6,21 @@ and the later rounds reference "Round of 32 N Winner"). This is a fixed,
 published structure for the tournament, so it's encoded as a static table rather
 than re-derived by rating seeding.
 
-R32 slots (1-indexed, matching ESPN's "Round of 32 N"):
-  1  A2 v B2          9  G1 v 3rd[A,E,H,I,J]
-  2  C1 v F2         10  D1 v 3rd[B,E,F,I,J]
-  3  E1 v 3rd[A,B,C,D,F]  11  H1 v J2
-  4  F1 v C2         12  K2 v L2
-  5  E2 v I2         13  B1 v 3rd[E,F,G,I,J]
-  6  I1 v 3rd[C,D,F,G,H]  14  D2 v G2
-  7  A1 v 3rd[C,E,F,H,I]  15  J1 v H2
-  8  L1 v 3rd[E,H,I,J,K]  16  K1 v 3rd[D,E,I,J,L]
+R32 slots are listed in the official FIFA match-number order (slot i = match
+72+i), verified against Wikipedia's knockout-stage schedule and ESPN's bracket
+(match 74 = "Winner E v 3rd A/B/C/D/F", match 76 = "Winner C v Runner-up F",
+etc.). Official numbering is NOT chronological, so it must come from this table
+rather than kickoff order.
+
+R32 slots (1-indexed, slot i = official match 72+i):
+   1 (73) A2 v B2              9 (81) D1 v 3rd[B,E,F,I,J]
+   2 (74) E1 v 3rd[A,B,C,D,F] 10 (82) G1 v 3rd[A,E,H,I,J]
+   3 (75) F1 v C2             11 (83) K2 v L2
+   4 (76) C1 v F2             12 (84) H1 v J2
+   5 (77) I1 v 3rd[C,D,F,G,H] 13 (85) B1 v 3rd[E,F,G,I,J]
+   6 (78) E2 v I2             14 (86) J1 v H2
+   7 (79) A1 v 3rd[C,E,F,H,I] 15 (87) K1 v 3rd[D,E,I,J,L]
+   8 (80) L1 v 3rd[E,H,I,J,K] 16 (88) D2 v G2
 """
 from __future__ import annotations
 
@@ -31,28 +37,30 @@ def T(groups: str) -> tuple:
     return ("T", frozenset(groups))  # one of these groups' third-placed teams
 
 
-# 16 R32 ties as (home_slot, away_slot), in ESPN "Round of 32 N" order.
+# 16 R32 ties as (home_slot, away_slot), in official match-number order
+# (slot i = match 72+i).
 R32_SLOTS = [
-    (R("A"), R("B")),        # 1
-    (W("C"), R("F")),        # 2
-    (W("E"), T("ABCDF")),    # 3
-    (W("F"), R("C")),        # 4
-    (R("E"), R("I")),        # 5
-    (W("I"), T("CDFGH")),    # 6
-    (W("A"), T("CEFHI")),    # 7
-    (W("L"), T("EHIJK")),    # 8
-    (W("G"), T("AEHIJ")),    # 9
-    (W("D"), T("BEFIJ")),    # 10
-    (W("H"), R("J")),        # 11
-    (R("K"), R("L")),        # 12
-    (W("B"), T("EFGIJ")),    # 13
-    (R("D"), R("G")),        # 14
-    (W("J"), R("H")),        # 15
-    (W("K"), T("DEIJL")),    # 16
+    (R("A"), R("B")),        # 1  (73)
+    (W("E"), T("ABCDF")),    # 2  (74)
+    (W("F"), R("C")),        # 3  (75)
+    (W("C"), R("F")),        # 4  (76)
+    (W("I"), T("CDFGH")),    # 5  (77)
+    (R("E"), R("I")),        # 6  (78)
+    (W("A"), T("CEFHI")),    # 7  (79)
+    (W("L"), T("EHIJK")),    # 8  (80)
+    (W("D"), T("BEFIJ")),    # 9  (81)
+    (W("G"), T("AEHIJ")),    # 10 (82)
+    (R("K"), R("L")),        # 11 (83)
+    (W("H"), R("J")),        # 12 (84)
+    (W("B"), T("EFGIJ")),    # 13 (85)
+    (W("J"), R("H")),        # 14 (86)
+    (W("K"), T("DEIJL")),    # 15 (87)
+    (R("D"), R("G")),        # 16 (88)
 ]
 
-# Tree linkage (1-indexed). Each pair feeds the next round in listed order.
-R16_PAIRS = [(1, 3), (2, 5), (4, 6), (7, 8), (11, 12), (9, 10), (14, 16), (13, 15)]
+# Tree linkage (1-indexed slot/tie numbers, = official match-number offset).
+# R16 tie j = official match 88+j; QF k = 96+k; SF l = 100+l; final = 104.
+R16_PAIRS = [(2, 5), (1, 3), (4, 6), (7, 8), (11, 12), (9, 10), (14, 16), (13, 15)]
 QF_PAIRS = [(1, 2), (5, 6), (3, 4), (7, 8)]   # indices into R16 winners
 SF_PAIRS = [(1, 2), (3, 4)]                    # indices into QF winners
 FINAL_PAIR = (1, 2)                            # indices into SF winners
@@ -71,6 +79,14 @@ QF_DISPLAY = [1, 2, 3, 4]
 SF_DISPLAY = [1, 2]
 R16_DISPLAY = [j for pair in QF_PAIRS for j in pair]
 R32_DISPLAY = [m for j in R16_DISPLAY for m in R16_PAIRS[j - 1]]
+
+
+# --- Official match-number lookups -------------------------------------------
+# Keyed by the unordered slot/feeder pair so home/away order doesn't matter.
+R32_NUMBER = {frozenset(slots): 72 + i for i, slots in enumerate(R32_SLOTS, 1)}
+R16_NUMBER = {frozenset(pair): 88 + j for j, pair in enumerate(R16_PAIRS, 1)}
+QF_NUMBER = {frozenset(pair): 96 + k for k, pair in enumerate(QF_PAIRS, 1)}
+SF_NUMBER = {frozenset(pair): 100 + l for l, pair in enumerate(SF_PAIRS, 1)}
 
 
 def slot_label(slot: tuple) -> str:
