@@ -88,9 +88,14 @@ def now_iso() -> str:
 @contextmanager
 def connect() -> Iterator[sqlite3.Connection]:
     settings.db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(settings.db_path)
+    conn = sqlite3.connect(settings.db_path, timeout=15.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # WAL lets dashboard reads run concurrently with the refresh thread's writes
+    # (avoids "database is locked" 500s → the red error dialog); busy_timeout
+    # makes any contention wait instead of erroring.
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 15000")
     try:
         yield conn
         conn.commit()

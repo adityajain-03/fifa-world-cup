@@ -40,12 +40,14 @@ async def lifespan(app: FastAPI):
     init_db()
     # Frequent, LLM-free live poll: updates bracket/odds when results change.
     # (News/ratings stay manual via the Refresh button — see services/refresh.)
+    # NOTE: do NOT pass next_run_time=None here — APScheduler treats that as a
+    # PAUSED job, so the interval would never fire. Omit it (first run = now +
+    # interval); the startup_poll below covers the immediate first update.
     scheduler.add_job(
         _scheduled_results_poll,
         IntervalTrigger(minutes=settings.results_poll_minutes),
         id="results_poll",
         replace_existing=True,
-        next_run_time=None,
     )
     scheduler.start()
     log.info("Scheduler started; live results poll every %d min", settings.results_poll_minutes)
