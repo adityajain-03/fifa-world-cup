@@ -60,12 +60,11 @@ FINAL_PAIR = (1, 2)                            # indices into SF winners
 # R32 match indices whose away slot is a third-placed team, with eligible groups.
 THIRD_SLOT_INDICES = [i for i, (_, away) in enumerate(R32_SLOTS, start=1) if away[0] == "T"]
 
-# Tree (top-to-bottom) display order for each round, derived from the linkage by
-# a DFS of the bracket. Emitting ties in this order makes each round's match sit
-# vertically centred between the two feeder matches in the previous column, so
-# the bracket reads as a tree instead of four unrelated lists.
-R32_DISPLAY = [1, 3, 2, 5, 11, 12, 9, 10, 4, 6, 7, 8, 14, 16, 13, 15]
-R16_DISPLAY = [1, 2, 5, 6, 3, 4, 7, 8]
+# Display order so the two R32 matches that feed each R16 sit adjacent, in R16
+# match order: R16 #1 = R32 (1,3), #2 = (2,5), #3 = (4,6), ... So the R32 column
+# reads 1,3, 2,5, 4,6, 7,8, 11,12, 9,10, 14,16, 13,15 (official numbers kept).
+R32_DISPLAY = [m for pair in R16_PAIRS for m in pair]
+R16_DISPLAY = [1, 2, 3, 4, 5, 6, 7, 8]
 QF_DISPLAY = [1, 2, 3, 4]
 SF_DISPLAY = [1, 2]
 
