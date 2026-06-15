@@ -128,11 +128,14 @@ code { background: #0008; padding: 1px 5px; border-radius: 4px; }
 }
 .bf-col { display: flex; flex-direction: column; min-width: 0; }
 .bf-label { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; text-align: center; margin-bottom: 8px; }
-.bf-body { flex: 1; display: flex; flex-direction: column; justify-content: space-around; gap: 4px; }
+/* No gap: space-around alone distributes the boxes so that, with every tie the
+   same height, each round's match centres between its two feeders. */
+.bf-body { flex: 1; display: flex; flex-direction: column; justify-content: space-around; }
 .bt-tie {
   background: var(--panel2); border: 1px solid var(--line);
   border-radius: 6px; overflow: hidden; font-size: 11px;
 }
+.bt-tie-empty { visibility: hidden; }
 .bt-side { display: flex; justify-content: space-between; align-items: center; padding: 3px 5px; color: var(--muted); border-bottom: 1px solid #0d1620; }
 .bt-side:last-child { border-bottom: 0; }
 .bt-side.win { color: var(--text); font-weight: 700; background: #10241a; }
@@ -145,8 +148,9 @@ code { background: #0008; padding: 1px 5px; border-radius: 4px; }
   font-weight: 800; color: var(--accent); background: #0d1f16; border: 1px solid #1f3a2a;
   border-radius: 3px; padding: 0 3px; margin-right: 4px; vertical-align: middle; }
 .bt-side.win .bt-slot { color: var(--bg); background: var(--accent); border-color: var(--accent); }
-.bt-mno { font-size: 8px; color: var(--muted); text-align: center; padding: 2px 0 1px;
-  border-bottom: 1px solid #0d1620; letter-spacing: 0.3px; }
+.bt-mno { font-size: 8px; color: var(--muted); text-align: center; padding: 2px 4px 1px;
+  border-bottom: 1px solid #0d1620; letter-spacing: 0.3px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
 .bracket-legend { font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.8; }
 .bracket-legend .bt-slot { margin: 0 2px 0 6px; }
 .bt-prob { font-size: 9px; color: var(--muted); margin-left: 4px; flex: none; }

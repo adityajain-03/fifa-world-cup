@@ -9,6 +9,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .agents.orchestrator import run_simulation_only
 from .api.routes import router
 from .config import BASE_DIR, settings
 from .db import get_last_crawl, init_db
@@ -35,6 +36,18 @@ def _scheduled_results_poll() -> None:
         log.exception("Results poll failed")
 
 
+def _startup_render() -> None:
+    """On boot: pull latest results, then ALWAYS re-render the snapshot from the
+    current code (run_simulation_only is free/LLM-less). Without this, the bracket
+    layout/order is frozen in the stored snapshot and a redeploy wouldn't show
+    code changes until a result happened to change."""
+    try:
+        poll_results()
+        run_simulation_only()
+    except Exception:  # noqa: BLE001
+        log.exception("Startup render failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -55,9 +68,9 @@ async def lifespan(app: FastAPI):
         # First boot with an empty DB: populate fully in the background.
         scheduler.add_job(_scheduled_full_refresh, id="startup_refresh", replace_existing=True)
     else:
-        # Booting from the seed: poll latest results immediately so the bracket
-        # is current within seconds instead of waiting for the first interval.
-        scheduler.add_job(_scheduled_results_poll, id="startup_poll", replace_existing=True)
+        # Booting from the seed: re-render the snapshot now (applies current code
+        # + latest results) instead of waiting for a result to change.
+        scheduler.add_job(_startup_render, id="startup_render", replace_existing=True)
     yield
     scheduler.shutdown(wait=False)
 

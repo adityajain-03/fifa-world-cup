@@ -26,17 +26,32 @@ function Side({ name, group, slot, win, prob }) {
   );
 }
 
-function TieBox({ tie }) {
-  if (!tie) return null;
+function TieBox({ tie, header }) {
+  if (!tie) return <div className="bt-tie bt-tie-empty" />;
   const homeWin = tie.winner_id === tie.home_id;
   const ph = Math.round(tie.p_home_advance * 100);
   return (
     <div className="bt-tie">
-      {tie.match_no && <div className="bt-mno">R32 · Match {tie.match_no}</div>}
+      {/* Every tie carries a header of equal height, so boxes stay the same size
+          and each round lines up vertically between its two feeder matches. */}
+      <div className="bt-mno">{header || " "}</div>
       <Side name={tie.home} group={tie.home_group} slot={tie.home_slot} win={homeWin} prob={ph} />
       <Side name={tie.away} group={tie.away_group} slot={tie.away_slot} win={!homeWin} prob={100 - ph} />
     </div>
   );
+}
+
+// Header text per tie: R32 shows its official match number; R16 shows which two
+// R32 matches feed it (since R16 #i is fed by the i-th adjacent R32 pair).
+function headerFor(key, i, tie, bracket) {
+  if (key === "round_of_32") return `Match ${tie.match_no}`;
+  if (key === "round_of_16") {
+    const r = bracket.round_of_32 || [];
+    const a = r[2 * i] && r[2 * i].match_no;
+    const b = r[2 * i + 1] && r[2 * i + 1].match_no;
+    if (a && b) return `Winners M${a} & M${b}`;
+  }
+  return null;
 }
 
 export default function BracketView({ bracket }) {
@@ -56,7 +71,7 @@ export default function BracketView({ bracket }) {
           <div className="bf-label">{label}</div>
           <div className="bf-body">
             {(bracket[key] || []).map((tie, i) => (
-              <TieBox tie={tie} key={i} />
+              <TieBox tie={tie} header={headerFor(key, i, tie, bracket)} key={i} />
             ))}
           </div>
         </div>
