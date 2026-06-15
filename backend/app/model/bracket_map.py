@@ -60,13 +60,17 @@ FINAL_PAIR = (1, 2)                            # indices into SF winners
 # R32 match indices whose away slot is a third-placed team, with eligible groups.
 THIRD_SLOT_INDICES = [i for i, (_, away) in enumerate(R32_SLOTS, start=1) if away[0] == "T"]
 
-# Display order so the two R32 matches that feed each R16 sit adjacent, in R16
-# match order: R16 #1 = R32 (1,3), #2 = (2,5), #3 = (4,6), ... So the R32 column
-# reads 1,3, 2,5, 4,6, 7,8, 11,12, 9,10, 14,16, 13,15 (official numbers kept).
-R32_DISPLAY = [m for pair in R16_PAIRS for m in pair]
-R16_DISPLAY = [1, 2, 3, 4, 5, 6, 7, 8]
+# Display order: lay each column out as a *planar* bracket tree, so every match
+# sits vertically between the two feeders that produce it (no crossing lines).
+# QF_PAIRS feeds R16 ties (1,2),(5,6),(3,4),(7,8) in QF order, so the R16 column
+# must read 1,2,5,6,3,4,7,8 for QF1..QF4 to align top-to-bottom. The R32 column
+# then follows each R16 tie's two feeders in that same order. Official match
+# numbers are stamped per tie independently (see Simulator._annotate), so this
+# reordering is purely visual and matches ESPN's bracket layout.
 QF_DISPLAY = [1, 2, 3, 4]
 SF_DISPLAY = [1, 2]
+R16_DISPLAY = [j for pair in QF_PAIRS for j in pair]
+R32_DISPLAY = [m for j in R16_DISPLAY for m in R16_PAIRS[j - 1]]
 
 
 def slot_label(slot: tuple) -> str:
