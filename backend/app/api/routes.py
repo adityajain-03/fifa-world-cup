@@ -6,9 +6,10 @@ import logging
 import threading
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Body, Header, HTTPException, Query
 
 from .. import db
+from ..agents.orchestrator import whatif_bracket
 from ..config import settings
 from ..services.refresh import run_refresh
 
@@ -139,6 +140,22 @@ def bracket():
     if not snapshot:
         raise HTTPException(404, "no prediction snapshot yet; trigger /api/refresh")
     return snapshot
+
+
+@router.post("/whatif")
+def whatif(body: dict = Body(...)):
+    """Hypothetical bracket: caller supplies the 16 Round-of-32 ties as
+    {"pairs": [[home_id, away_id], ... 16]} in official slot order (slot i =
+    match 72+i). Returns the resolved knockout tree (same shape as
+    /bracket -> bracket), recomputed with the current ratings. Free, LLM-less."""
+    pairs = body.get("pairs")
+    if not isinstance(pairs, list) or len(pairs) != 16:
+        raise HTTPException(422, "expected 'pairs': a list of 16 [home_id, away_id]")
+    norm = [(p[0] or None, p[1] or None) for p in pairs]
+    try:
+        return whatif_bracket(norm)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
 
 
 @router.post("/refresh")

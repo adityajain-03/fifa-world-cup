@@ -8,10 +8,11 @@ import NewsPanel from "./components/NewsPanel.jsx";
 import Markdown from "./components/Markdown.jsx";
 import GroupTables from "./components/GroupTables.jsx";
 import BracketView from "./components/BracketView.jsx";
+import WhatIf from "./components/WhatIf.jsx";
 import MatchList from "./components/MatchList.jsx";
 import TeamPanel from "./components/TeamCard.jsx";
 
-const TABS = ["Overview", "Odds", "Groups", "Bracket", "Matches", "Teams"];
+const TABS = ["Overview", "Odds", "Groups", "Bracket", "What-if", "Matches", "Teams"];
 
 export default function App() {
   const [status, setStatus] = useState(null);
@@ -139,6 +140,7 @@ export default function App() {
         )}
         {tab === "Groups" && <GroupTables groups={groups} />}
         {tab === "Bracket" && <BracketView bracket={bracket?.bracket} />}
+        {tab === "What-if" && <WhatIf bracket={bracket?.bracket} teams={teams} />}
         {tab === "Matches" && <MatchList matches={matches} teams={teams} />}
         {tab === "Teams" && <TeamPanel teams={teams} odds={odds} />}
       </main>

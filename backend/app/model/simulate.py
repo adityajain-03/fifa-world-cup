@@ -261,6 +261,12 @@ class Simulator:
         orders = {g: self._expected_group_order(g) for g in self.groups}
         winners, runners, thirds = self._qualifiers(orders)
         r32_pairs = self._resolve_r32(winners, runners, thirds)
+        return self.build_bracket(r32_pairs)
+
+    def build_bracket(self, r32_pairs: list[tuple]) -> dict:
+        """Resolve the knockout tree from a fixed set of 16 R32 (home_id, away_id)
+        pairs, picking the favourite at every tie. Used by favourite_bracket and by
+        the what-if sandbox (which supplies user-chosen R32 participants)."""
         if sum(1 for a, b in r32_pairs if a and b) == 0:
             return {}
 

@@ -16,7 +16,7 @@ from ..models import BracketSnapshot, Match, MatchPrediction, ScoutDossier, Team
 from ..model.ratings import (
     TeamStrength, apply_match_elo, fifa_rank_to_rating, match_probabilities,
 )
-from ..model.simulate import KO_ROUNDS, simulate
+from ..model.simulate import KO_ROUNDS, Simulator, simulate
 from .analyst import write_narrative
 from .client import ClaudeClient
 from .scout import scout_team
@@ -235,6 +235,20 @@ def _cached_dossiers(teams: list[Team]) -> dict[str, ScoutDossier]:
         row = rows.get(t.id)
         out[t.id] = ScoutDossier(**json.loads(row["payload_json"])) if row else _prior_dossier(t)
     return out
+
+
+def whatif_bracket(r32_pairs: list[tuple[str | None, str | None]]) -> dict:
+    """Resolve a hypothetical knockout bracket from a user-chosen set of 16 R32
+    (home_id, away_id) pairs (slot order 1..16), using the current cached ratings.
+    Deterministic favourite propagation — no crawl, no LLM, sub-millisecond."""
+    teams = db.get_teams()
+    matches = db.get_matches()
+    if not teams:
+        raise RuntimeError("No teams in DB; run a refresh first.")
+    dossiers = _cached_dossiers(teams)
+    strengths = to_strengths(teams, dossiers, matches)
+    sim = Simulator(strengths, matches, settings.monte_carlo_runs)
+    return sim.build_bracket([tuple(p) for p in r32_pairs])
 
 
 def run_simulation_only() -> BracketSnapshot:

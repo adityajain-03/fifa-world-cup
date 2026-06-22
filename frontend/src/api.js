@@ -38,6 +38,15 @@ export const api = {
   matches: (stage) => get(`/matches${stage ? `?stage=${stage}` : ""}`),
   teams: () => get("/teams"),
   team: (id) => get(`/teams/${id}`),
+  whatif: async (pairs) => {
+    const res = await fetch("/api/whatif", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pairs }),
+    });
+    if (!res.ok) throw new Error(`/whatif -> ${res.status}`);
+    return res.json();
+  },
   refresh: async () => {
     const res = await fetch("/api/refresh", {
       method: "POST",

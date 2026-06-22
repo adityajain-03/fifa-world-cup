@@ -26,7 +26,7 @@ function Side({ name, group, slot, win, prob }) {
   );
 }
 
-function TieBox({ tie, header }) {
+export function TieBox({ tie, header }) {
   if (!tie) return <div className="bt-tie bt-tie-empty" />;
   const homeWin = tie.winner_id === tie.home_id;
   const ph = Math.round(tie.p_home_advance * 100);
@@ -51,7 +51,7 @@ function fmtKO(kickoff) {
   });
 }
 
-function headerFor(key, i, tie) {
+export function headerFor(key, i, tie) {
   const parts = [];
   if (tie.number) parts.push(`#${tie.number}`);
   const ko = fmtKO(tie.kickoff);
