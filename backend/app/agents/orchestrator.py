@@ -17,6 +17,7 @@ from ..model.ratings import (
     TeamStrength, apply_match_elo, fifa_rank_to_rating, match_probabilities,
 )
 from ..model.simulate import KO_ROUNDS, Simulator, simulate
+from ..model.tickets import predict_ticket_prices
 from .analyst import write_narrative
 from .client import ClaudeClient
 from .scout import scout_team
@@ -208,6 +209,7 @@ def run_predictions(*, force: bool = False) -> BracketSnapshot:
     else:
         narrative = (db.get_latest_snapshot() or {}).get("analyst_narrative", "")
 
+    ratings = {s.id: s.rating for s in strengths}
     snapshot = BracketSnapshot(
         created_at=db.now_iso(),
         data_version=data_version,
@@ -215,6 +217,7 @@ def run_predictions(*, force: bool = False) -> BracketSnapshot:
         odds=odds_sorted,
         bracket=sim["bracket"],
         group_predictions=sim["group_predictions"],
+        ticket_prices=predict_ticket_prices(sim["bracket"], ratings),
         analyst_narrative=narrative,
     )
     db.store_snapshot(snapshot)
@@ -275,6 +278,7 @@ def run_simulation_only() -> BracketSnapshot:
     prev = db.get_latest_snapshot() or {}
     grounded = any(d.briefing for d in dossiers.values())
 
+    ratings = {s.id: s.rating for s in strengths}
     snapshot = BracketSnapshot(
         created_at=db.now_iso(),
         data_version=data_version,
@@ -282,6 +286,7 @@ def run_simulation_only() -> BracketSnapshot:
         odds=odds_sorted,
         bracket=sim["bracket"],
         group_predictions=sim["group_predictions"],
+        ticket_prices=predict_ticket_prices(sim["bracket"], ratings),
         analyst_narrative=prev.get("analyst_narrative", ""),
     )
     db.store_snapshot(snapshot)
