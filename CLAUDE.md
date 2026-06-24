@@ -1,4 +1,8 @@
-# CLAUDE.md — World Cup 2026 Prediction Dashboard
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+# World Cup 2026 Prediction Dashboard
 
 Context for Claude (and humans) working in this repo.
 
