@@ -107,4 +107,5 @@ class BracketSnapshot(BaseModel):
     odds: list[TeamOdds]
     bracket: dict  # modal knockout path, slot -> team
     group_predictions: dict  # group -> ordered list of {team_id, expected_points, ...}
+    ticket_prices: list[dict] = []  # R16+ resale price estimates per match
     analyst_narrative: str = ""

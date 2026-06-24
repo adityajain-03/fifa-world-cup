@@ -43,6 +43,61 @@ def _sample_poisson(lam: float) -> int:
             return k - 1
 
 
+def _rank_group(
+    ids: list[str],
+    matches: list[tuple[str, str, float, float, float, float]],
+    fallback: dict[str, float],
+) -> list[str]:
+    """Order group teams best-first per the official FIFA 2026 group tiebreakers.
+
+    `matches` is one tuple per pairing `(a, b, pts_a, pts_b, goals_a, goals_b)`.
+    Criteria applied in order:
+      1-3. across all group matches: points, then goal difference, then goals for;
+      4-6. for teams still level, the same three *restricted to matches among only
+           the tied teams* (head-to-head).
+    FIFA's remaining criteria (fair-play points, drawing of lots) need data we
+    don't have, so `fallback` (higher = better, e.g. Elo rating) stands in.
+    """
+    def tally(subset: set[str]) -> tuple[dict, dict, dict]:
+        pts = {i: 0.0 for i in subset}
+        gd = {i: 0.0 for i in subset}
+        gf = {i: 0.0 for i in subset}
+        for a, b, pa, pb, ga, gb in matches:
+            if a in subset and b in subset:
+                pts[a] += pa; pts[b] += pb
+                gf[a] += ga; gf[b] += gb
+                gd[a] += ga - gb; gd[b] += gb - ga
+        return pts, gd, gf
+
+    pts, gd, gf = tally(set(ids))
+
+    def overall_key(i: str) -> tuple:
+        return (round(pts[i], 6), round(gd[i], 6), round(gf[i], 6))
+
+    order = sorted(ids, key=lambda i: (*overall_key(i), fallback.get(i, 0.0)),
+                   reverse=True)
+
+    # Break ties among teams level on all three overall criteria via head-to-head.
+    result: list[str] = []
+    i = 0
+    while i < len(order):
+        j = i + 1
+        while j < len(order) and overall_key(order[j]) == overall_key(order[i]):
+            j += 1
+        tied = order[i:j]
+        if len(tied) > 1:
+            hp, hgd, hgf = tally(set(tied))
+            tied = sorted(
+                tied,
+                key=lambda t: (round(hp[t], 6), round(hgd[t], 6),
+                               round(hgf[t], 6), fallback.get(t, 0.0)),
+                reverse=True,
+            )
+        result.extend(tied)
+        i = j
+    return result
+
+
 class Simulator:
     def __init__(self, teams: list[TeamStrength], matches: list[Match], runs: int):
         self.runs = runs
@@ -107,9 +162,7 @@ class Simulator:
     # -- group stage -----------------------------------------------------
     def _sim_group(self, group: str) -> list[str]:
         ids = self.groups[group]
-        pts = {i: 0 for i in ids}
-        gd = {i: 0 for i in ids}
-        gf = {i: 0 for i in ids}
+        matches: list[tuple[str, str, float, float, float, float]] = []
         for x in range(len(ids)):
             for y in range(x + 1, len(ids)):
                 a, b = ids[x], ids[y]
@@ -120,15 +173,10 @@ class Simulator:
                     mp = self._prob(a, b, knockout=False)
                     hs = _sample_poisson(mp.expected_home_goals)
                     as_ = _sample_poisson(mp.expected_away_goals)
-                gf[a] += hs; gf[b] += as_
-                gd[a] += hs - as_; gd[b] += as_ - hs
-                if hs > as_:
-                    pts[a] += 3
-                elif hs < as_:
-                    pts[b] += 3
-                else:
-                    pts[a] += 1; pts[b] += 1
-        return sorted(ids, key=lambda i: (pts[i], gd[i], gf[i]), reverse=True)
+                pa, pb = (3, 0) if hs > as_ else (0, 3) if hs < as_ else (1, 1)
+                matches.append((a, b, pa, pb, hs, as_))
+        fallback = {i: self.teams[i].rating for i in ids}
+        return _rank_group(ids, matches, fallback)
 
     # -- official knockout bracket --------------------------------------
     def _qualifiers(self, orders: dict[str, list[str]]) -> tuple[dict, dict, dict]:
@@ -316,28 +364,25 @@ class Simulator:
 
     def _expected_group_order(self, group: str) -> list[str]:
         ids = self.groups[group]
-        pts = {i: 0.0 for i in ids}
-        gd = {i: 0.0 for i in ids}
+        matches: list[tuple[str, str, float, float, float, float]] = []
         for x in range(len(ids)):
             for y in range(x + 1, len(ids)):
                 a, b = ids[x], ids[y]
                 fin = self._finished_for(a, b)
                 if fin:
-                    hs, as_ = fin.home_score, fin.away_score
-                    if hs > as_:
-                        pts[a] += 3
-                    elif hs < as_:
-                        pts[b] += 3
-                    else:
-                        pts[a] += 1; pts[b] += 1
-                    gd[a] += hs - as_; gd[b] += as_ - hs
+                    pa, pb = ((3.0, 0.0) if fin.home_score > fin.away_score
+                              else (0.0, 3.0) if fin.home_score < fin.away_score
+                              else (1.0, 1.0))
+                    matches.append((a, b, pa, pb, fin.home_score, fin.away_score))
                 else:
                     mp = self._prob(a, b, knockout=False)
-                    pts[a] += 3 * mp.p_home + mp.p_draw
-                    pts[b] += 3 * mp.p_away + mp.p_draw
-                    gd[a] += mp.expected_home_goals - mp.expected_away_goals
-                    gd[b] += mp.expected_away_goals - mp.expected_home_goals
-        return sorted(ids, key=lambda i: (pts[i], gd[i]), reverse=True)
+                    matches.append((
+                        a, b,
+                        3 * mp.p_home + mp.p_draw, 3 * mp.p_away + mp.p_draw,
+                        mp.expected_home_goals, mp.expected_away_goals,
+                    ))
+        fallback = {i: self.teams[i].rating for i in ids}
+        return _rank_group(ids, matches, fallback)
 
     def group_table_predictions(self, odds: dict) -> dict:
         out: dict[str, list] = {}
@@ -359,7 +404,7 @@ class Simulator:
                         mp = self._prob(a, b, knockout=False)
                         pts[a] += 3 * mp.p_home + mp.p_draw
                         pts[b] += 3 * mp.p_away + mp.p_draw
-            ordered = sorted(ids, key=lambda i: pts[i], reverse=True)
+            ordered = self._expected_group_order(g)
             out[g] = [
                 {
                     "team_id": i, "team_name": self.teams[i].name,
