@@ -404,10 +404,61 @@ class Simulator:
         fallback = {i: self.teams[i].rating for i in ids}
         return _rank_group(ids, matches, fallback)
 
+    def _clinch_status(self, group: str) -> dict[str, dict[str, bool]]:
+        """Mathematically-decided status per team from results played so far
+        (finished + live), independent of the Monte Carlo sim. Flags are sound:
+        they never claim a place that isn't truly locked.
+
+        `won_group`     - guaranteed to finish 1st.
+        `top2_clinched` - guaranteed top 2 (direct qualification).
+        `eliminated`    - cannot finish in the top 3 (so cannot advance directly
+                          nor as a best third; 4th place never qualifies).
+
+        A completed group (all matches played) uses the exact final standings,
+        so tiebreaks are honoured. Otherwise we use point bounds: a rival can
+        still finish at/above team T if its max possible points >= T's current
+        points (ties counted conservatively as "could finish above")."""
+        ids = self.groups[group]
+        cur = {i: 0 for i in ids}
+        played = {i: 0 for i in ids}
+        for (h, a), f in self.finished_group.items():
+            if h in cur and a in cur:
+                played[h] += 1; played[a] += 1
+                if f.home_score > f.away_score:
+                    cur[h] += 3
+                elif f.home_score < f.away_score:
+                    cur[a] += 3
+                else:
+                    cur[h] += 1; cur[a] += 1
+
+        # Completed group: positions (incl. tiebreaks) are settled facts.
+        if all(played[i] == 3 for i in ids):
+            order, _ = self._sim_group(group)  # all matches finished -> deterministic
+            pos = {tid: p for p, tid in enumerate(order)}
+            return {
+                i: {"won_group": pos[i] == 0, "top2_clinched": pos[i] <= 1,
+                    "eliminated": pos[i] >= 3}
+                for i in ids
+            }
+
+        # Each team plays 3 group matches; remaining = 3 - played.
+        max_pts = {i: cur[i] + 3 * (3 - played[i]) for i in ids}
+        out: dict[str, dict[str, bool]] = {}
+        for i in ids:
+            can_reach = sum(1 for r in ids if r != i and max_pts[r] >= cur[i])
+            certainly_above = sum(1 for r in ids if r != i and cur[r] > max_pts[i])
+            out[i] = {
+                "won_group": all(max_pts[r] < cur[i] for r in ids if r != i),
+                "top2_clinched": can_reach <= 1,
+                "eliminated": certainly_above >= 3,
+            }
+        return out
+
     def group_table_predictions(self, odds: dict) -> dict:
         out: dict[str, list] = {}
         for g in sorted(self.groups):
             ids = self.groups[g]
+            clinch = self._clinch_status(g)
             pts = {i: 0.0 for i in ids}
             for x in range(len(ids)):
                 for y in range(x + 1, len(ids)):
@@ -431,6 +482,11 @@ class Simulator:
                     "expected_points": round(pts[i], 2),
                     "win_group": round(odds[i]["win_group"], 3),
                     "advance": round(odds[i]["advance_group"], 3),
+                    # Mathematically locked (sound; never over-claims). A 3rd-placed
+                    # team isn't "qualified" until the best-thirds race is settled.
+                    "won_group": clinch[i]["won_group"],
+                    "qualified": clinch[i]["top2_clinched"],
+                    "eliminated": clinch[i]["eliminated"],
                 }
                 for i in ordered
             ]

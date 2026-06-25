@@ -74,6 +74,10 @@ code { background: #0008; padding: 1px 5px; border-radius: 4px; }
 .tbl td.team { font-weight: 600; }
 .tbl td.pts { font-weight: 700; }
 .pill { font-size: 10px; background: #14331f; color: var(--accent); padding: 1px 6px; border-radius: 8px; margin-left: 6px; }
+.pill.clinch { font-weight: 700; }
+.pill.clinch.won { background: #3a2e0a; color: #ffd54a; }
+.pill.clinch.through { background: #103a1f; color: #57e08a; }
+.pill.clinch.out { background: #3a1414; color: #ff8585; }
 .adv { position: relative; display: inline-block; width: 56px; height: 16px; background: #0d1620; border-radius: 4px; overflow: hidden; }
 .adv-bar { position: absolute; left: 0; top: 0; height: 100%; background: var(--accent2); opacity: 0.55; }
 .adv-num { position: relative; font-size: 11px; padding-left: 4px; }

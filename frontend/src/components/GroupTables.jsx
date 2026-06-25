@@ -23,11 +23,22 @@ export default function GroupTables({ groups }) {
                 {data.standings.map((r, i) => {
                   const p = predByTeam[r.team_id] || {};
                   const adv = p.advance != null ? Math.round(p.advance * 100) : null;
+                  const status = p.won_group
+                    ? { cls: "won", label: "✓ Won group" }
+                    : p.qualified
+                    ? { cls: "through", label: "✓ Qualified" }
+                    : p.eliminated
+                    ? { cls: "out", label: "Eliminated" }
+                    : null;
                   return (
                     <tr key={r.team_id} className={i < 2 ? "qualifies" : ""}>
                       <td className="team">
                         {r.team_name}
-                        {p.win_group >= 0.4 && <span className="pill">favourite</span>}
+                        {status ? (
+                          <span className={`pill clinch ${status.cls}`}>{status.label}</span>
+                        ) : (
+                          p.win_group >= 0.4 && <span className="pill">favourite</span>
+                        )}
                       </td>
                       <td>{r.played}</td>
                       <td>{r.won}-{r.drawn}-{r.lost}</td>
