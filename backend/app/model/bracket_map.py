@@ -24,6 +24,8 @@ R32 slots (1-indexed, slot i = official match 72+i):
 """
 from __future__ import annotations
 
+from .third_place_table import THIRD_PLACE_TABLE
+
 
 def W(group: str) -> tuple:
     return ("W", group)  # group winner
@@ -100,13 +102,21 @@ def slot_label(slot: tuple) -> str:
 
 
 def assign_thirds(qualified_thirds: dict[str, str]) -> dict[int, str]:
-    """Assign the (up to 8) qualifying third-placed teams to the 8 third slots,
-    respecting each slot's eligible-group list. `qualified_thirds` maps
-    group_letter -> team_id. Returns {r32_match_index: team_id}.
+    """Assign the (up to 8) qualifying third-placed teams to the 8 third slots.
+    `qualified_thirds` maps group_letter -> team_id. Returns
+    {r32_match_index: team_id}.
 
-    Uses backtracking to find a valid perfect matching (FIFA uses a fixed lookup
-    table; any eligibility-respecting assignment yields a structurally valid
-    bracket, which is what we need for prediction)."""
+    When exactly 8 thirds qualify, uses FIFA's official Annex C allocation table
+    (`third_place_table.THIRD_PLACE_TABLE`) — the published, exact mapping of
+    which group's third plays in which R32 match. Falls back to an
+    eligibility-respecting backtracking match if the combination isn't in the
+    table (e.g. fewer than 8 thirds available mid-prediction)."""
+    if len(qualified_thirds) == 8:
+        key = "".join(sorted(qualified_thirds))
+        official = THIRD_PLACE_TABLE.get(key)
+        if official is not None:
+            return {idx: qualified_thirds[g] for idx, g in official.items()}
+
     slots = [(idx, R32_SLOTS[idx - 1][1][1]) for idx in THIRD_SLOT_INDICES]  # (idx, eligible set)
     groups = list(qualified_thirds.keys())
 

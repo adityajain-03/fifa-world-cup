@@ -47,7 +47,7 @@ def _rank_group(
     ids: list[str],
     matches: list[tuple[str, str, float, float, float, float]],
     fallback: dict[str, float],
-) -> list[str]:
+) -> tuple[list[str], dict[str, tuple[float, float, float]]]:
     """Order group teams best-first per the official FIFA 2026 group tiebreakers.
 
     `matches` is one tuple per pairing `(a, b, pts_a, pts_b, goals_a, goals_b)`.
@@ -57,6 +57,9 @@ def _rank_group(
            the tied teams* (head-to-head).
     FIFA's remaining criteria (fair-play points, drawing of lots) need data we
     don't have, so `fallback` (higher = better, e.g. Elo rating) stands in.
+
+    Returns `(ordered_ids, stats)` where `stats[id] = (points, gd, goals_for)`
+    across all group matches (used to rank third-placed teams across groups).
     """
     def tally(subset: set[str]) -> tuple[dict, dict, dict]:
         pts = {i: 0.0 for i in subset}
@@ -95,7 +98,8 @@ def _rank_group(
             )
         result.extend(tied)
         i = j
-    return result
+    stats = {i: (pts[i], gd[i], gf[i]) for i in ids}
+    return result, stats
 
 
 class Simulator:
@@ -128,7 +132,7 @@ class Simulator:
         for m in matches:
             if (
                 m.stage == "group"
-                and m.status == "finished"
+                and m.status in ("finished", "live")
                 and m.home_id in self.teams
                 and m.away_id in self.teams
                 and m.home_score is not None
@@ -160,7 +164,7 @@ class Simulator:
         return t.group if t else None
 
     # -- group stage -----------------------------------------------------
-    def _sim_group(self, group: str) -> list[str]:
+    def _sim_group(self, group: str) -> tuple[list[str], dict[str, tuple]]:
         ids = self.groups[group]
         matches: list[tuple[str, str, float, float, float, float]] = []
         for x in range(len(ids)):
@@ -179,14 +183,26 @@ class Simulator:
         return _rank_group(ids, matches, fallback)
 
     # -- official knockout bracket --------------------------------------
-    def _qualifiers(self, orders: dict[str, list[str]]) -> tuple[dict, dict, dict]:
+    def _qualifiers(
+        self,
+        orders: dict[str, list[str]],
+        stats: dict[str, dict[str, tuple[float, float, float]]],
+    ) -> tuple[dict, dict, dict]:
         """From each group's finishing order, return winners{group}, runners{group}
-        and the third-slot assignment {r32_index: team_id} for the best 8 thirds."""
+        and the third-slot assignment {r32_index: team_id} for the best 8 thirds.
+
+        `stats[group][team_id] = (points, gd, goals_for)`. The 8 best third-placed
+        teams are ranked per FIFA: points, goal difference, goals scored (Elo
+        rating standing in for FIFA's fair-play/lots criteria we lack)."""
         winners = {g: o[0] for g, o in orders.items() if len(o) >= 1}
         runners = {g: o[1] for g, o in orders.items() if len(o) >= 2}
         thirds = {g: o[2] for g, o in orders.items() if len(o) >= 3}
-        # Best 8 thirds by rating (proxy for the real pts/gd/gf ranking).
-        best = sorted(thirds, key=lambda g: self.teams[thirds[g]].rating, reverse=True)[:8]
+
+        def third_key(g: str) -> tuple:
+            pts, gd, gf = stats[g][thirds[g]]
+            return (pts, gd, gf, self.teams[thirds[g]].rating)
+
+        best = sorted(thirds, key=third_key, reverse=True)[:8]
         qualified = {g: thirds[g] for g in best}
         assigned = bm.assign_thirds(qualified)
         return winners, runners, assigned
@@ -245,11 +261,13 @@ class Simulator:
         advance = defaultdict(int)
 
         for _ in range(self.runs):
-            orders = {g: self._sim_group(g) for g in self.groups}
+            ranked = {g: self._sim_group(g) for g in self.groups}
+            orders = {g: r[0] for g, r in ranked.items()}
+            stats = {g: r[1] for g, r in ranked.items()}
             for o in orders.values():
                 if o:
                     win_group[o[0]] += 1
-            winners, runners, thirds = self._qualifiers(orders)
+            winners, runners, thirds = self._qualifiers(orders, stats)
             qualifiers = set(winners.values()) | set(runners.values()) | set(thirds.values())
             for q in qualifiers:
                 advance[q] += 1
@@ -306,8 +324,10 @@ class Simulator:
         }, winner
 
     def favourite_bracket(self) -> dict:
-        orders = {g: self._expected_group_order(g) for g in self.groups}
-        winners, runners, thirds = self._qualifiers(orders)
+        ranked = {g: self._expected_group_order(g) for g in self.groups}
+        orders = {g: r[0] for g, r in ranked.items()}
+        stats = {g: r[1] for g, r in ranked.items()}
+        winners, runners, thirds = self._qualifiers(orders, stats)
         r32_pairs = self._resolve_r32(winners, runners, thirds)
         return self.build_bracket(r32_pairs)
 
@@ -362,7 +382,7 @@ class Simulator:
                          "group": ct.group if ct else None},
         }
 
-    def _expected_group_order(self, group: str) -> list[str]:
+    def _expected_group_order(self, group: str) -> tuple[list[str], dict[str, tuple]]:
         ids = self.groups[group]
         matches: list[tuple[str, str, float, float, float, float]] = []
         for x in range(len(ids)):
@@ -404,7 +424,7 @@ class Simulator:
                         mp = self._prob(a, b, knockout=False)
                         pts[a] += 3 * mp.p_home + mp.p_draw
                         pts[b] += 3 * mp.p_away + mp.p_draw
-            ordered = self._expected_group_order(g)
+            ordered, _ = self._expected_group_order(g)
             out[g] = [
                 {
                     "team_id": i, "team_name": self.teams[i].name,
