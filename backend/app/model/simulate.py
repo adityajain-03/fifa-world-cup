@@ -111,6 +111,7 @@ class Simulator:
             if t.group:
                 self.groups[t.group].append(t.id)
         self.finished_group = self._finished_group(matches)
+        self.finished_ko = self._finished_ko(matches)
         self._prob_cache: dict[tuple[str, str, bool], MatchProb] = {}
         # KO fixtures per stage, in official order (match number / kickoff), so we
         # can stamp each bracket tie with its official number + kickoff time.
@@ -142,6 +143,44 @@ class Simulator:
                     m.home_id, m.away_id, m.home_score, m.away_score
                 )
         return out
+
+    def _finished_ko(self, matches: list[Match]) -> dict[frozenset, _Finished]:
+        """Played knockout results, keyed by the unordered pair of team ids so we
+        can look one up regardless of which side ended up the bracket 'home'."""
+        out: dict[frozenset, _Finished] = {}
+        for m in matches:
+            if (
+                m.stage in ("round_of_32", "round_of_16", "quarter_final",
+                            "semi_final", "final")
+                and m.status in ("finished", "live")
+                and m.home_id in self.teams
+                and m.away_id in self.teams
+                and m.home_id != m.away_id
+                and m.home_score is not None
+                and m.away_score is not None
+            ):
+                out[frozenset((m.home_id, m.away_id))] = _Finished(
+                    m.home_id, m.away_id, m.home_score, m.away_score
+                )
+        return out
+
+    def _ko_result(self, a: str, b: str) -> _Finished | None:
+        """The played knockout result between a and b, oriented to (a, b)."""
+        fin = self.finished_ko.get(frozenset((a, b)))
+        if not fin:
+            return None
+        if fin.home_id == a:
+            return fin
+        return _Finished(a, b, fin.away_score, fin.home_score)
+
+    def _ko_winner(self, a: str, b: str) -> str | None:
+        """Actual winner of a played knockout tie, or None if undecided. A draw on
+        the scoreline went to penalties, whose winner we can't read from ESPN's
+        score fields, so we leave it to the model rather than guess."""
+        fin = self._ko_result(a, b)
+        if not fin or fin.home_score == fin.away_score:
+            return None
+        return a if fin.home_score > fin.away_score else b
 
     def _prob(self, a: str, b: str, knockout: bool) -> MatchProb:
         key = (a, b, knockout)
@@ -228,6 +267,9 @@ class Simulator:
     def _winner(self, a: str | None, b: str | None, sample: bool) -> str | None:
         if not a or not b:
             return a or b
+        actual = self._ko_winner(a, b)
+        if actual:
+            return actual
         mp = self._prob(a, b, knockout=True)
         if sample:
             return a if random.random() < mp.advance_home else b
@@ -254,31 +296,65 @@ class Simulator:
         }
 
     # -- public ----------------------------------------------------------
+    def _groups_complete(self) -> bool:
+        """True once every group pairing has a played result — at which point the
+        12 standings (and thus the 32 R32 qualifiers) are settled facts."""
+        if not self.groups:
+            return False
+        for ids in self.groups.values():
+            for x in range(len(ids)):
+                for y in range(x + 1, len(ids)):
+                    if not self._finished_for(ids[x], ids[y]):
+                        return False
+        return True
+
     def run(self) -> dict:
         title = defaultdict(int)
         reach = {r: defaultdict(int) for r in KO_ROUNDS}
         win_group = defaultdict(int)
         advance = defaultdict(int)
 
-        for _ in range(self.runs):
-            ranked = {g: self._sim_group(g) for g in self.groups}
+        # Once the group stage is over, qualifiers are decided — don't re-simulate
+        # the groups. Fix R32 from the real standings and only Monte-Carlo the
+        # knockout tree (played KO results are pinned by `_play`).
+        if self._groups_complete():
+            ranked = {g: self._expected_group_order(g) for g in self.groups}
             orders = {g: r[0] for g, r in ranked.items()}
             stats = {g: r[1] for g, r in ranked.items()}
+            winners, runners, thirds = self._qualifiers(orders, stats)
+            r32_pairs = self._resolve_r32(winners, runners, thirds)
             for o in orders.values():
                 if o:
-                    win_group[o[0]] += 1
-            winners, runners, thirds = self._qualifiers(orders, stats)
-            qualifiers = set(winners.values()) | set(runners.values()) | set(thirds.values())
-            for q in qualifiers:
-                advance[q] += 1
-            if len(qualifiers) < 2:
-                continue
-            reached = self._play(self._resolve_r32(winners, runners, thirds), sample=True)
-            if reached["champion"]:
-                title[reached["champion"]] += 1
-            for r in reach:
-                for tid in reached[r]:
-                    reach[r][tid] += 1
+                    win_group[o[0]] = self.runs
+            for q in set(winners.values()) | set(runners.values()) | set(thirds.values()):
+                advance[q] = self.runs
+            for _ in range(self.runs):
+                reached = self._play(r32_pairs, sample=True)
+                if reached["champion"]:
+                    title[reached["champion"]] += 1
+                for r in reach:
+                    for tid in reached[r]:
+                        reach[r][tid] += 1
+        else:
+            for _ in range(self.runs):
+                ranked = {g: self._sim_group(g) for g in self.groups}
+                orders = {g: r[0] for g, r in ranked.items()}
+                stats = {g: r[1] for g, r in ranked.items()}
+                for o in orders.values():
+                    if o:
+                        win_group[o[0]] += 1
+                winners, runners, thirds = self._qualifiers(orders, stats)
+                qualifiers = set(winners.values()) | set(runners.values()) | set(thirds.values())
+                for q in qualifiers:
+                    advance[q] += 1
+                if len(qualifiers) < 2:
+                    continue
+                reached = self._play(self._resolve_r32(winners, runners, thirds), sample=True)
+                if reached["champion"]:
+                    title[reached["champion"]] += 1
+                for r in reach:
+                    for tid in reached[r]:
+                        reach[r][tid] += 1
 
         runs = self.runs
         odds = {}
@@ -314,14 +390,21 @@ class Simulator:
                     "winner": name, "winner_id": w, "winner_group": grp,
                     "p_home_advance": 1.0 if a else 0.0}, w
         mp = self._prob(a, b, knockout=True)
-        winner = a if mp.advance_home >= mp.advance_away else b
+        fin = self._ko_result(a, b)
+        actual = self._ko_winner(a, b)
+        winner = actual or (a if mp.advance_home >= mp.advance_away else b)
         na, ga = info(a); nb, gb = info(b); nw, gw = info(winner)
-        return {
+        tie = {
             "home": na, "home_id": a, "home_group": ga,
             "away": nb, "away_id": b, "away_group": gb,
             "winner": nw, "winner_id": winner, "winner_group": gw,
             "p_home_advance": round(mp.advance_home, 3),
-        }, winner
+        }
+        if fin:  # a played knockout tie — show the real scoreline
+            tie["home_score"] = fin.home_score
+            tie["away_score"] = fin.away_score
+            tie["played"] = True
+        return tie, winner
 
     def favourite_bracket(self) -> dict:
         ranked = {g: self._expected_group_order(g) for g in self.groups}
