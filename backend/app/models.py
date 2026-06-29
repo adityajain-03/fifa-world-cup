@@ -47,6 +47,8 @@ class Match(BaseModel):
     away_name: Optional[str] = None
     home_score: Optional[int] = None
     away_score: Optional[int] = None
+    home_pens: Optional[int] = None   # penalty-shootout tally (KO ties only)
+    away_pens: Optional[int] = None
     status: MatchStatus = "scheduled"
 
 

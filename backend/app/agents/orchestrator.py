@@ -66,8 +66,9 @@ KO_STAGES = {"round_of_32", "round_of_16", "quarter_final", "semi_final", "third
 def alive_team_ids(teams: list[Team], matches: list[Match]) -> set[str]:
     """Teams still in contention. During the group stage that's everyone; once the
     knockouts have real teams drawn, it's the knockout participants minus any that
-    lost a finished knockout match. Penalty draws (level score) keep both teams
-    (we can't tell the loser from the score) — a safe over-inclusion."""
+    lost a finished knockout match. A level scoreline is decided by the penalty
+    tally when reported; if pens are missing too, both teams are kept (a safe
+    over-inclusion)."""
     ids = {t.id for t in teams}
     ko = [
         m for m in matches
@@ -84,6 +85,9 @@ def alive_team_ids(teams: list[Team], matches: list[Match]) -> set[str]:
                 losers.add(m.away_id)
             elif m.away_score > m.home_score:
                 losers.add(m.home_id)
+            elif m.home_pens is not None and m.away_pens is not None \
+                    and m.home_pens != m.away_pens:
+                losers.add(m.away_id if m.home_pens > m.away_pens else m.home_id)
     return participants - losers
 
 
