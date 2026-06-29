@@ -116,6 +116,15 @@ def _parse_event(ev: dict, d: date) -> Match | None:
         except (TypeError, ValueError):
             return None
 
+    def pens(c: dict):
+        # ESPN exposes the penalty-shootout tally on `shootoutScore` (only set when
+        # a knockout tie went to penalties); absent/empty otherwise.
+        s = c.get("shootoutScore")
+        try:
+            return int(s)
+        except (TypeError, ValueError):
+            return None
+
     hname, aname = team_name(home), team_name(away)
     h_ph, a_ph = is_placeholder(hname), is_placeholder(aname)
     stage = _stage_for(d)
@@ -135,6 +144,8 @@ def _parse_event(ev: dict, d: date) -> Match | None:
         away_name=aname,
         home_score=score(home),
         away_score=score(away),
+        home_pens=pens(home),
+        away_pens=pens(away),
         status=_status(stype.get("state", "pre"), bool(stype.get("completed"))),  # type: ignore[arg-type]
     )
 

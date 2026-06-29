@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS matches (
     away_name TEXT,
     home_score INTEGER,
     away_score INTEGER,
+    home_pens INTEGER,
+    away_pens INTEGER,
     status TEXT NOT NULL DEFAULT 'scheduled'
 );
 CREATE TABLE IF NOT EXISTS match_predictions (
@@ -121,6 +123,10 @@ def init_db() -> None:
             conn.execute("ALTER TABLE matches ADD COLUMN kickoff TEXT")
         if "number" not in cols:
             conn.execute("ALTER TABLE matches ADD COLUMN number INTEGER")
+        if "home_pens" not in cols:
+            conn.execute("ALTER TABLE matches ADD COLUMN home_pens INTEGER")
+        if "away_pens" not in cols:
+            conn.execute("ALTER TABLE matches ADD COLUMN away_pens INTEGER")
 
 
 # --- meta key/value -------------------------------------------------------
@@ -207,8 +213,9 @@ def upsert_matches(matches: Iterable[Match]) -> None:
         for m in matches:
             conn.execute(
                 'INSERT INTO matches(id, stage, "group", date, kickoff, number, '
-                "home_id, away_id, home_name, away_name, home_score, away_score, status) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                "home_id, away_id, home_name, away_name, home_score, away_score, "
+                "home_pens, away_pens, status) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                 'stage=excluded.stage, '
                 '"group"=COALESCE(excluded."group", matches."group"), date=excluded.date, '
                 "kickoff=COALESCE(excluded.kickoff, matches.kickoff), "
@@ -218,11 +225,13 @@ def upsert_matches(matches: Iterable[Match]) -> None:
                 "home_name=COALESCE(excluded.home_name, matches.home_name), "
                 "away_name=COALESCE(excluded.away_name, matches.away_name), "
                 "home_score=excluded.home_score, away_score=excluded.away_score, "
+                "home_pens=excluded.home_pens, away_pens=excluded.away_pens, "
                 "status=excluded.status",
                 (
                     m.id, m.stage, m.group, m.date, m.kickoff, m.number,
                     m.home_id, m.away_id,
-                    m.home_name, m.away_name, m.home_score, m.away_score, m.status,
+                    m.home_name, m.away_name, m.home_score, m.away_score,
+                    m.home_pens, m.away_pens, m.status,
                 ),
             )
 

@@ -31,6 +31,8 @@ class _Finished:
     away_id: str
     home_score: int
     away_score: int
+    home_pens: int | None = None
+    away_pens: int | None = None
 
 
 def _sample_poisson(lam: float) -> int:
@@ -160,7 +162,8 @@ class Simulator:
                 and m.away_score is not None
             ):
                 out[frozenset((m.home_id, m.away_id))] = _Finished(
-                    m.home_id, m.away_id, m.home_score, m.away_score
+                    m.home_id, m.away_id, m.home_score, m.away_score,
+                    m.home_pens, m.away_pens,
                 )
         return out
 
@@ -171,16 +174,22 @@ class Simulator:
             return None
         if fin.home_id == a:
             return fin
-        return _Finished(a, b, fin.away_score, fin.home_score)
+        return _Finished(a, b, fin.away_score, fin.home_score,
+                         fin.away_pens, fin.home_pens)
 
     def _ko_winner(self, a: str, b: str) -> str | None:
-        """Actual winner of a played knockout tie, or None if undecided. A draw on
-        the scoreline went to penalties, whose winner we can't read from ESPN's
-        score fields, so we leave it to the model rather than guess."""
+        """Actual winner of a played knockout tie, or None if undecided. A level
+        scoreline is broken by the penalty-shootout tally when ESPN reports one;
+        only if that's missing too do we leave the tie to the model."""
         fin = self._ko_result(a, b)
-        if not fin or fin.home_score == fin.away_score:
+        if not fin:
             return None
-        return a if fin.home_score > fin.away_score else b
+        if fin.home_score != fin.away_score:
+            return a if fin.home_score > fin.away_score else b
+        if fin.home_pens is not None and fin.away_pens is not None \
+                and fin.home_pens != fin.away_pens:
+            return a if fin.home_pens > fin.away_pens else b
+        return None
 
     def _prob(self, a: str, b: str, knockout: bool) -> MatchProb:
         key = (a, b, knockout)
@@ -404,6 +413,9 @@ class Simulator:
             tie["home_score"] = fin.home_score
             tie["away_score"] = fin.away_score
             tie["played"] = True
+            if fin.home_pens is not None and fin.away_pens is not None:
+                tie["home_pens"] = fin.home_pens
+                tie["away_pens"] = fin.away_pens
         return tie, winner
 
     def favourite_bracket(self) -> dict:
